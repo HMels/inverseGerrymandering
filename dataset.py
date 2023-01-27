@@ -122,7 +122,7 @@ def train(self, learning_rate=1, epochs=100, opt_fn=tf.optimizers.Adagrad, opt=N
 #%% load data
 # https://opendata.cbs.nl/statline/#/CBS/nl/dataset/85163NED/table?ts=1669130926836
 # should be downloaded as "CVS met statistische symbolen"
-SES = pd.read_csv("../SES_WOA_scores_per_wijk_en_buurt_18012023_185321.csv"
+SES = pd.read_csv("Data/SES_WOA_scores_per_wijk_en_buurt_18012023_185321.csv"
                             , delimiter=';',quotechar='"').values
 wijk = SES[:,1]
 part_huishoudens = np.array(SES[:,2].tolist()).astype(np.float32)       # aantal particuliere huishoudens
