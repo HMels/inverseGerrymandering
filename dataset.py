@@ -45,16 +45,24 @@ class Dataset(tf.keras.Model):
             This would mean one could implement restrictions to the rows of Map
             multiplied with that vector of Data to restrict group sizes
         Right now entropy does not normalize data and thus each data has weird weights
+        As the matrix is square, the amounts of neighbourhoods stays equal. 
         
     '''
-    def __init__(self, Data):
+    def __init__(self, Data, Population_size):
         super(Dataset, self).__init__()
-        self.Data = tf.Variable(Data, trainable=False, dtype=tf.float32)
+        self.Data = tf.Variable(Data[:,None], trainable=False, dtype=tf.float32)
+        self.population_size = tf.Variable(Population_size[:,None], trainable=False, dtype=tf.float32)
         self.Map = tf.Variable(tf.eye(self.Data.shape[0]), trainable=True, dtype=tf.float32)
         
         # The matrix used to calculate entropy, and their original values
-        self.Pk = tf.matmul(self.Data , tf.ones([Data.shape[1], Data.shape[0]]) )
+        self.Pk = tf.matmul(self.Data , tf.ones([self.Data.shape[1], self.Data.shape[0]]) )
         self.Pk.trainable = False
+        
+        # population parameters
+        self.tot_pop = tf.reduce_sum(self.population_size)
+        self.population_bounds = tf.Variable([.8, 1.2], trainable=False, dtype=tf.float32) # the boundaries by which the population can grow or shrink of their original size
+        self.popBoundHigh  = self.population_bounds[1] * self.population_size
+        self.popBoundLow  = self.population_bounds[0] * self.population_size
         
     
     @tf.function
@@ -81,10 +89,13 @@ class Dataset(tf.keras.Model):
         L1_pos = tf.reduce_sum(tf.abs(tf.where(self.Map < 0., self.Map, 0.)))
         
         # L1 regularization term to let the map be normalised to one when summed up
-        #L1_norm = tf.reduce_sum(tf.where(tf.reduce_sum(self.Map, axis=1, keepdims=True) > 1., self.Map, 0))
+        mapPop = self(self.population_size)    # the mapped population size
+        popCost = tf.reduce_sum(self.Map, axis = 1) / self.Map.shape[1]  # the cost for erring
+        L1_pop = tf.reduce_sum(tf.where(mapPop > self.popBoundHigh, popCost, 0)+
+                               tf.where(mapPop < self.popBoundLow, popCost, 0))
         
         # total L1  reegularization
-        L1_reg = L1_pos #+ L1_norm
+        L1_reg = L1_pos + L1_pop
         
         return original_loss + L1_reg
     
@@ -93,7 +104,15 @@ class Dataset(tf.keras.Model):
     def normalise_map(self):
         Map = self.Map / tf.reduce_sum(self.Map, axis=0)       # Divide each row by its sum
         return Map
-
+    
+    @tf.function
+    def mapped_population_size(self):
+        return self(self.population_size)
+    
+    @tf.function
+    def mapped_Data(self):
+        return self(self.Data)
+    
 
     @tf.function
     def train_step(self, input_data):
@@ -120,8 +139,9 @@ Data = np.concatenate([part_huishoudens[:,None,None],SES_WOA[:,None,None]],axis=
 
 
 #%%
-age = tf.Variable(np.array([40,45,30,55])[:,None], dtype=tf.float32)
-model = Dataset(age)
+age = tf.Variable(np.array([40,45,30,55]), dtype=tf.float32)
+pop_dense = tf.Variable(np.array([500,800,1200,400]), dtype=tf.float32)
+model = Dataset(age, pop_dense)
 input_data = model.Pk
 optimizer = tf.keras.optimizers.Adam(learning_rate=0.01)
 
@@ -130,5 +150,11 @@ for i in range(500):
     loss_value = model.train_step(input_data)
     if i % 100 == 0:
         print("Step: {}, Loss: {}".format(i, loss_value.numpy()))
+      
         
-print( tf.round( model.normalise_map() * 100 , 1 ) )
+#%% output
+print(
+  "The Map is:\n",tf.round( model.normalise_map() * 100 , 1 ).numpy(),
+  "\nAge:\n", model.mapped_Data().numpy(),
+  "\nPopulation Size:\n", tf.round( model.mapped_population_size() ).numpy()
+  )
