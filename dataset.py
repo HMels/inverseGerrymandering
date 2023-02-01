@@ -46,14 +46,22 @@ class Dataset(tf.keras.Model):
             multiplied with that vector of Data to restrict group sizes
         Right now entropy does not normalize data and thus each data has weird weights
         As the matrix is square, the amounts of neighbourhoods stays equal. 
+        I should probably change it in such a way that the entropy is always created via map*population
+        Geographical constraints should be more important that the amount of neighbourhoods. Assign
+            coordinates to neighbourhoods and calculate distances in between
+        For later version, we can limit the Map to a stroke in the diagonal to limit how far people can travel 
+            between neighbourhoods
         
     '''
-    def __init__(self, Data, Population_size):
+    def __init__(self, Data, Population_size, num_communities):
         super(Dataset, self).__init__()
         self.Data = tf.Variable(Data[:,None], trainable=False, dtype=tf.float32)
         self.population_size = tf.Variable(Population_size[:,None], trainable=False, dtype=tf.float32)
-        self.Map = tf.Variable(tf.eye(self.Data.shape[0]), trainable=True, dtype=tf.float32)
-        
+        self.num_communities = tf.Variable(num_communities, trainable=False, dtype=tf.float32)
+        #self.Map = tf.Variable(tf.eye(self.Data.shape[0]), trainable=True, dtype=tf.float32)
+        #self.Map = tf.Variable(tf.ones((self.num_communities, self.Data.shape[0]), dtype=tf.float32), trainable=True)
+        #TODO figure out how to make a non square matrix in entropy calculations
+
         # The matrix used to calculate entropy, and their original values
         self.Pk = tf.matmul(self.Data , tf.ones([self.Data.shape[1], self.Data.shape[0]]) )
         self.Pk.trainable = False
@@ -68,13 +76,16 @@ class Dataset(tf.keras.Model):
     @tf.function
     def call(self, inputs):
     # transforms the inputs according to the Map
+        #TODO make it such that the SES values are multiplied with the population distribution, not just the map
         return tf.matmul(self.normalise_map(), inputs)
+        #return tf.matmul(self.population_Map(), inputs)
     
     
     @tf.function
     def calculate_entropy(self, Plogits):
     # takes in the (mapped) matrix Pk and creates Qk 
     # then calculates the entropy via sum( Pk*log(Pk/Qk) )
+        #TODO fix the entropy for non-positive logits
         Qlogits = tf.transpose(Plogits)
         return tf.reduce_sum( Plogits * tf.math.log(Plogits / Qlogits) )
     
@@ -88,14 +99,21 @@ class Dataset(tf.keras.Model):
         # L1 regularization term to let the map be positive
         L1_pos = tf.reduce_sum(tf.abs(tf.where(self.Map < 0., self.Map, 0.)))
         
-        # L1 regularization term to let the map be normalised to one when summed up
+        # L1 regularization term for population limits
         mapPop = self(self.population_size)    # the mapped population size
         popCost = tf.reduce_sum(self.Map, axis = 1) / self.Map.shape[1]  # the cost for erring
         L1_pop = tf.reduce_sum(tf.where(mapPop > self.popBoundHigh, popCost, 0)+
                                tf.where(mapPop < self.popBoundLow, popCost, 0))
-        
+        '''
+        mapPop = tf.reduce_sum(self.population_Map(), axis=0)    # the mapped population size
+        popCost = tf.reduce_sum(self.Map, axis = 1) / self.Map.shape[1]  # the cost for erring
+        L1_pop = tf.reduce_sum(tf.where(mapPop > self.popBoundHigh, popCost, 0)+
+                               tf.where(mapPop < self.popBoundLow, popCost, 0))
+        '''
         # total L1  reegularization
         L1_reg = L1_pos + L1_pop
+        
+        #TODO add something about distances here
         
         return original_loss + L1_reg
     
@@ -112,6 +130,10 @@ class Dataset(tf.keras.Model):
     @tf.function
     def mapped_Data(self):
         return self(self.Data)
+    
+    @tf.function
+    def population_Map(self):
+        return self.population_size[:,0] * self.normalise_map()
     
 
     @tf.function
@@ -134,14 +156,16 @@ part_huishoudens = np.array(SES[:,2].tolist()).astype(np.float32)       # aantal
 SES_WOA = np.array(SES[:,3].tolist()).astype(np.float32)                # sociaal economische waarde van regio
 Spreiding = np.array(SES[:,4].tolist()).astype(np.float32)              # numerieke maat van ongelijkheid in een regio
 
+SES_WOA10 = tf.exp(SES_WOA)         # transform to Log scale to make all values positive
+#TODO this will not really do anything? Because entropy uses log terms, will this not just reduce the calculation to being a simple difference?
 
-Data = np.concatenate([part_huishoudens[:,None,None],SES_WOA[:,None,None]],axis=2) # use matrix projecting? to get in right format 
-
+N=4
+model = Dataset(SES_WOA10[:N], part_huishoudens[:N], num_communities=3)
 
 #%%
-age = tf.Variable(np.array([40,45,30,55]), dtype=tf.float32)
-pop_dense = tf.Variable(np.array([500,800,1200,400]), dtype=tf.float32)
-model = Dataset(age, pop_dense)
+#age = tf.Variable(np.array([40,45,30,55]), dtype=tf.float32)
+#pop_dense = tf.Variable(np.array([500,800,1200,400]), dtype=tf.float32)
+#model = Dataset(age, pop_dense)
 input_data = model.Pk
 optimizer = tf.keras.optimizers.Adam(learning_rate=0.01)
 
@@ -154,7 +178,9 @@ for i in range(500):
         
 #%% output
 print(
-  "The Map is:\n",tf.round( model.normalise_map() * 100 , 1 ).numpy(),
-  "\nAge:\n", model.mapped_Data().numpy(),
-  "\nPopulation Size:\n", tf.round( model.mapped_population_size() ).numpy()
+  "\nThe Map is:\n",tf.round( model.normalise_map() * 100 , 1 ).numpy(),
+  "\n\nwhich counts up to:\n",tf.reduce_sum(tf.round( model.normalise_map() * 100 , 1 ).numpy(), axis=0),
+  "\nThe Population Map is:\n",tf.round( model.population_Map()).numpy(),
+  "\n\nSES_WOA:\n", model.mapped_Data().numpy(),
+  "\n\nPopulation Size:\n", tf.round( model.mapped_population_size() ).numpy()
   )
