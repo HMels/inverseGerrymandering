@@ -57,35 +57,36 @@ class Dataset(tf.keras.Model):
         super(Dataset, self).__init__()
         self.Data = tf.Variable(Data[:,None], trainable=False, dtype=tf.float32)
         self.population_size = tf.Variable(Population_size[:,None], trainable=False, dtype=tf.float32)
-        self.num_communities = tf.Variable(num_communities, trainable=False, dtype=tf.float32)
-        #self.Map = tf.Variable(tf.eye(self.Data.shape[0]), trainable=True, dtype=tf.float32)
-        #self.Map = tf.Variable(tf.ones((self.num_communities, self.Data.shape[0]), dtype=tf.float32), trainable=True)
-        #TODO figure out how to make a non square matrix in entropy calculations
+        self.num_communities = num_communities
+        self.Map = self.initialise_map()
 
         # The matrix used to calculate entropy, and their original values
-        self.Pk = tf.matmul(self.Data , tf.ones([self.Data.shape[1], self.Data.shape[0]]) )
+        self.Pk = tf.matmul(self.Data , tf.ones([self.Data.shape[1], self.num_communities]) )
         self.Pk.trainable = False
         
         # population parameters
-        self.tot_pop = tf.reduce_sum(self.population_size)
         self.population_bounds = tf.Variable([.8, 1.2], trainable=False, dtype=tf.float32) # the boundaries by which the population can grow or shrink of their original size
-        self.popBoundHigh  = self.population_bounds[1] * self.population_size
-        self.popBoundLow  = self.population_bounds[0] * self.population_size
+        self.tot_pop = tf.reduce_sum(self.population_size)
+        self.avg_pop = self.tot_pop / self.num_communities
+        self.popBoundHigh  = self.population_bounds[1] * self.avg_pop
+        self.popBoundLow  = self.population_bounds[0] * self.avg_pop
         
     
     @tf.function
     def call(self, inputs):
-    # transforms the inputs according to the Map
+        '''transforms the inputs according to the Map'''
         #TODO make it such that the SES values are multiplied with the population distribution, not just the map
-        return tf.matmul(self.normalise_map(), inputs)
         #return tf.matmul(self.population_Map(), inputs)
+        return tf.matmul(self.normalise_map(), inputs)
     
     
     @tf.function
     def calculate_entropy(self, Plogits):
-    # takes in the (mapped) matrix Pk and creates Qk 
-    # then calculates the entropy via sum( Pk*log(Pk/Qk) )
-        #TODO fix the entropy for non-positive logits
+        '''
+        takes in the (mapped) matrix Pk and creates Qk 
+        then calculates the entropy via sum( Pk*log(Pk/Qk) )
+        '''    
+        #TODO fix the entropy for non-positive logits (so also zeroes)
         Qlogits = tf.transpose(Plogits)
         return tf.reduce_sum( Plogits * tf.math.log(Plogits / Qlogits) )
     
@@ -104,12 +105,7 @@ class Dataset(tf.keras.Model):
         popCost = tf.reduce_sum(self.Map, axis = 1) / self.Map.shape[1]  # the cost for erring
         L1_pop = tf.reduce_sum(tf.where(mapPop > self.popBoundHigh, popCost, 0)+
                                tf.where(mapPop < self.popBoundLow, popCost, 0))
-        '''
-        mapPop = tf.reduce_sum(self.population_Map(), axis=0)    # the mapped population size
-        popCost = tf.reduce_sum(self.Map, axis = 1) / self.Map.shape[1]  # the cost for erring
-        L1_pop = tf.reduce_sum(tf.where(mapPop > self.popBoundHigh, popCost, 0)+
-                               tf.where(mapPop < self.popBoundLow, popCost, 0))
-        '''
+        
         # total L1  reegularization
         L1_reg = L1_pos + L1_pop
         
@@ -119,7 +115,38 @@ class Dataset(tf.keras.Model):
     
     
     @tf.function
+    def initialise_map(self):
+        '''
+        Initialises the Map matrix that maps the data. The map has the size 
+        (final # of communities x initial # of communities). When both are equal,
+        the maps initial guess is an unitary matrix. In case this differs, the
+        initial guess still tries to make it unitary, but either splits the remaining 
+        initial communities over the final communities, or the other way around.
+        '''
+        #Map = tf.eye(self.Data.shape[0])
+        #Map = (1/self.num_communities)*tf.ones((self.num_communities, self.Data.shape[0]))
+        Map = np.zeros([self.num_communities, self.Data.shape[0]])
+        if self.num_communities < self.Data.shape[0]:
+            for i in range(self.num_communities):
+                Map[i,i]=1.
+            Map[:,self.num_communities:] = 1 / self.num_communities
+        else:
+            # the factor by which we split the communities to spread them
+            diff = self.num_communities-self.Data.shape[0]
+            factor = 1 / self.num_communities
+            for i in range(self.Data.shape[0]):
+                Map[i,i]=1. - factor*diff
+            Map[self.Data.shape[0]:,:] = factor 
+        #TODO for some reason having the final amount of communities bigger makes calculations explode
+        return tf.Variable(Map, dtype=tf.float32, trainable=True)
+    
+    
+    @tf.function
     def normalise_map(self):
+        '''
+        normalises the map such that it does not create people or split people 
+        over different communities
+        '''
         Map = self.Map / tf.reduce_sum(self.Map, axis=0)       # Divide each row by its sum
         return Map
     
@@ -160,7 +187,8 @@ SES_WOA10 = tf.exp(SES_WOA)         # transform to Log scale to make all values 
 #TODO this will not really do anything? Because entropy uses log terms, will this not just reduce the calculation to being a simple difference?
 
 N=4
-model = Dataset(SES_WOA10[:N], part_huishoudens[:N], num_communities=3)
+num_communities=5
+model = Dataset(SES_WOA10[:N], part_huishoudens[:N], num_communities)
 
 #%%
 #age = tf.Variable(np.array([40,45,30,55]), dtype=tf.float32)
