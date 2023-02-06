@@ -51,6 +51,16 @@ class Dataset(tf.keras.Model):
             coordinates to neighbourhoods and calculate distances in between
         For later version, we can limit the Map to a stroke in the diagonal to limit how far people can travel 
             between neighbourhoods
+            
+            
+    Investigation into Entropy or KL-Divergence
+        It seems like both should be used often in relation to a discrete dataset.
+            So for example, the etnicity of people. Then the entropy would be able to
+            calculate the probabilities of one belonging to a certain ethnicity being 
+            put in a certain group and optimise that. Entropy works on probabilities
+        Important to note, lim_x->0 x*ln(x) = 0 (lHopital). However, one would still
+            need to map the SES_WOA to fit in an interval of [0,1]
+        I think it would be better to calculate the variance of the SES_WOA
         
     '''
     def __init__(self, Data, Population_size, num_communities):
@@ -85,17 +95,20 @@ class Dataset(tf.keras.Model):
         '''
         takes in the (mapped) matrix Pk and creates Qk 
         then calculates the entropy via sum( Pk*log(Pk/Qk) )
+        As lim_x->0 x*ln(x) = 0 (lHopital), we force this also.
         '''    
-        #TODO fix the entropy for non-positive logits (so also zeroes)
         Qlogits = tf.transpose(Plogits)
-        return tf.reduce_sum( Plogits * tf.math.log(Plogits / Qlogits) )
+        Entropy = tf.reduce_sum( Plogits * tf.math.log(Plogits / Qlogits) )
+        Entropy = tf.where(Plogits==0., Entropy, 0. )  # force to go to zero
+        return Entropy
     
     
     @tf.function
     def calculate_loss(self, Plogits):
     # Total loss with regularization
         # Original loss function (entropy)
-        original_loss = self.calculate_entropy(Plogits)
+        #original_loss = self.calculate_entropy(Plogits)
+        original_loss = tf.math.reduce_variance( self(self.Data) )
         
         # L1 regularization term to let the map be positive
         L1_pos = tf.reduce_sum(tf.abs(tf.where(self.Map < 0., self.Map, 0.)))
@@ -183,12 +196,9 @@ part_huishoudens = np.array(SES[:,2].tolist()).astype(np.float32)       # aantal
 SES_WOA = np.array(SES[:,3].tolist()).astype(np.float32)                # sociaal economische waarde van regio
 Spreiding = np.array(SES[:,4].tolist()).astype(np.float32)              # numerieke maat van ongelijkheid in een regio
 
-SES_WOA10 = tf.exp(SES_WOA)         # transform to Log scale to make all values positive
-#TODO this will not really do anything? Because entropy uses log terms, will this not just reduce the calculation to being a simple difference?
-
 N=4
-num_communities=5
-model = Dataset(SES_WOA10[:N], part_huishoudens[:N], num_communities)
+num_communities=3
+model = Dataset(SES_WOA[:N], part_huishoudens[:N], num_communities)
 
 #%%
 #age = tf.Variable(np.array([40,45,30,55]), dtype=tf.float32)
@@ -198,7 +208,7 @@ input_data = model.Pk
 optimizer = tf.keras.optimizers.Adam(learning_rate=0.01)
 
 # Training loop
-for i in range(500):
+for i in range(800):
     loss_value = model.train_step(input_data)
     if i % 100 == 0:
         print("Step: {}, Loss: {}".format(i, loss_value.numpy()))
