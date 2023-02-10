@@ -7,6 +7,8 @@ Created on Fri Jan 27 15:35:15 2023
 import numpy as np
 import tensorflow as tf
 import pandas as pd
+from geopy.geocoders import Nominatim
+from geopy import distance
 
 tf.config.run_functions_eagerly(True)  ### TODO should be False
 
@@ -189,15 +191,60 @@ class Dataset(tf.keras.Model):
 #%% load data
 # https://opendata.cbs.nl/statline/#/CBS/nl/dataset/85163NED/table?ts=1669130926836
 # should be downloaded as "CVS met statistische symbolen"
-SES = pd.read_csv("Data/SES_WOA_scores_per_wijk_en_buurt_18012023_185321.csv"
+SES = pd.read_csv("Data/SES_WOA_scores_per_wijk_en_buurt_10022023_163026.csv"
                             , delimiter=';',quotechar='"').values
 wijk = SES[:,1]
 part_huishoudens = np.array(SES[:,2].tolist()).astype(np.float32)       # aantal particuliere huishoudens
 SES_WOA = np.array(SES[:,3].tolist()).astype(np.float32)                # sociaal economische waarde van regio
 Spreiding = np.array(SES[:,4].tolist()).astype(np.float32)              # numerieke maat van ongelijkheid in een regio
+#TODO gebruik Spreiding in de berekening
 
-N=4
-num_communities=3
+
+# https://opendata.cbs.nl/statline/#/CBS/nl/dataset/85231NED/table?ts=1669130108033
+# should be downloaded as "CVS met statistische symbolen"
+# select the correct areas and filter on 'vije tijd en cultuur - afstand tot bibleotheek'
+# important to not is that you should only download neighbourhoods that maps.google recognises
+# (https://nl.wikipedia.org/wiki/Buurten_en_wijken_in_Amsterdam so wijken but not buurten)
+NabijheidCSV = pd.read_csv("Data/Nabijheid_voorzieningen__buurt_2021_10022023_162519.csv"
+                            , delimiter=';',quotechar='"').values
+
+# making sure it is ordered right
+Nabijheid = np.zeros(wijk.shape)
+for i in range(wijk.shape[0]):
+    try:
+        Nabijheid[i] = NabijheidCSV[np.where(NabijheidCSV==wijk[i])[0],1]
+    except: raise Exception("NabijheidCSV is incomplete compared to the SES data.")
+    
+# locaties downloaden
+city = "Amsterdam, Netherlands"
+geolocator = Nominatim(user_agent="Dataset")
+latlon0 = [ geolocator.geocode(city).latitude , geolocator.geocode(city).longitude ]
+Locs = np.zeros([wijk.shape[0],2])
+for i in range(wijk.shape[0]):
+    loc = wijk[i]+", "+city
+    geo_loc = geolocator.geocode(loc)
+    
+    if geo_loc==None:
+        loc = wijk[i].replace("buurt","")+", "+city
+        geo_loc = geolocator.geocode(loc)
+        if geo_loc==None:
+            loc = loc.replace("West","")
+            loc = loc.replace("Zuid","")
+            loc = loc.replace("Noord","")
+            loc = loc.replace("Oost","")
+            geo_loc = geolocator.geocode(loc)
+        
+    # putting all the coordinates in a grid
+    latlon = [ geo_loc.latitude , geo_loc.longitude ]
+    Locs[i,0] = distance.distance( latlon0 , [geo_loc.latitude, latlon0[1]] ).m
+    Locs[i,0] = Locs[i,0]* 1 if (latlon0[0] - geo_loc.latitude > 0) else -1
+    Locs[i,1] = distance.distance( latlon0 , [latlon0[0], geo_loc.longitude] ).m
+    Locs[i,1] = Locs[i,1]* 1 if (latlon0[1] - geo_loc.longitude > 0) else -1
+    
+    
+
+N=12
+num_communities=8
 model = Dataset(SES_WOA[:N], part_huishoudens[:N], num_communities)
 
 #%%
