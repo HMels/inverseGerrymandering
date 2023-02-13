@@ -74,6 +74,7 @@ class Dataset(tf.keras.Model):
         self.num_communities = num_communities
         self.Map = self.initialise_map()
         self.Locs = Locs
+        self.community_locs = self.initialise_communities(self.num_communities)
 
         # The matrix used to calculate entropy, and their original values
         #self.Pk = tf.matmul(self.SES_WOA , tf.ones([self.SES_WOA.shape[1], self.num_communities]) )
@@ -125,35 +126,49 @@ class Dataset(tf.keras.Model):
         # total L1  reegularization
         L1_reg = L1_pos + L1_pop
         
-        #limit the distances
+        #TODO limit the distances       
         
         
-        
-        return original_loss + L1_reg
+        return original_loss + L1_reg #+ dist_reg
     
     
     @tf.function
-    def initialise_map(self):
-        '''
-        Initialises the Map matrix that maps the data. The map has the size 
-        (final # of communities x initial # of communities). When both are equal,
+    def initialize_map(self):
+        """
+        Initialize the Map matrix that maps the data. The map has the size
+        (final number of communities x initial number of communities). When both are equal,
         the maps initial guess is an unitary matrix. In case this differs, the
-        initial guess still tries to make it unitary, but either splits the remaining 
+        initial guess still tries to make it unitary, but either splits the remaining
         initial communities over the final communities, or the other way around.
-        '''
+    
+        Returns:
+            A TensorFlow variable with shape (num_communities, SES_WOA.shape[0]), 
+            initialized with the desired values and set as trainable.
+        """
+        # Initialize the Map matrix with zeros
         Map = np.zeros([self.num_communities, self.SES_WOA.shape[0]])
+        
+        # When the final number of communities is smaller than the initial number
         if self.num_communities < self.SES_WOA.shape[0]:
+            # Assign 1 to the diagonal elements
             for i in range(self.num_communities):
-                Map[i,i]=1.
-            Map[:,self.num_communities:] = 1 / self.num_communities
+                Map[i, i] = 1.
+            # Assign 1 / num_communities to the remaining elements
+            Map[:, self.num_communities:] = 1 / self.num_communities
         else:
-            # the factor by which we split the communities to spread them
-            diff = self.num_communities-self.SES_WOA.shape[0]
+            # When the final number of communities is greater than the initial number
+            # Calculate the factor by which we split the communities to spread them
+            diff = self.num_communities - self.SES_WOA.shape[0]
             factor = 1 / self.num_communities
+            # Assign (1 - factor * diff) to the diagonal elements
             for i in range(self.SES_WOA.shape[0]):
-                Map[i,i]=1. - factor*diff
-            Map[self.SES_WOA.shape[0]:,:] = factor 
+                Map[i, i] = 1. - factor * diff
+            # Assign factor to the remaining elements
+            Map[self.SES_WOA.shape[0]:, :] = factor
+            
         #TODO for some reason having the final amount of communities bigger makes calculations explode
+        
+        # Return the initialized Map matrix as a TensorFlow variable
         return tf.Variable(Map, dtype=tf.float32, trainable=True)
     
     
@@ -178,11 +193,49 @@ class Dataset(tf.keras.Model):
     def population_Map(self):
         return self.population_size[:,0] * self.normalise_map()
     
+    
+    @tf.function
+    def initialise_communities(self, num_communities):
+        """
+        Parameters
+        ----------
+        num_communities : int32
+            The number of communities we want to end up with.
+
+        Returns
+        -------
+        community_locs : float32 2D array
+            Array containing the locations of the newly created communities 
+            
+        This function uses KNN to initialise the locations of communities by sparsifying 
+        the input locations.
+        """
+        #TODO This only works for num_communities < N. Make it work for the other way
+        
+        # Define the number of nearest neighbors to consider
+        k = tf.cast(tf.math.ceil(self.Locs.shape[0] / num_communities),tf.int32)
+
+        # Calculate the Euclidean distances between all points in the data set
+        distances = tf.reduce_sum(tf.square(tf.expand_dims(self.Locs, 1) - tf.expand_dims(self.Locs, 0)), axis=-1)
+
+        # Find the indices of the nearest neighbors for each point
+        _, nearest_neighbor_indices = tf.nn.top_k(-distances, k=k, sorted=True)
+
+        # Gather the nearest neighbors for each point
+        nearest_neighbors = tf.gather(self.Locs, nearest_neighbor_indices, axis=0)
+
+        # Reshape the nearest neighbors tensor into the desired shape
+        new_locs = tf.reshape(nearest_neighbors, [-1, k, 2])
+
+        # Pick every M-th point from the new data set
+        sparse_indices = tf.range(0, tf.shape(new_locs)[0], k)
+        sparse_Locs = tf.gather(new_locs, tf.cast(sparse_indices, tf.int32), axis=0)
+        return tf.reduce_mean(sparse_Locs, axis=1)
+        
 
     @tf.function
     def train_step(self):
         with tf.GradientTape() as tape:
-            #logits = self(input_data)
             loss_value = self.calculate_loss()
         grads = tape.gradient(loss_value, self.trainable_variables)
         optimizer.apply_gradients(zip(grads, self.trainable_variables))
@@ -243,8 +296,8 @@ for i in range(wijk.shape[0]):
     Locs[i,1] = Locs[i,1] if (latlon0[1] - geo_loc.longitude > 0) else -Locs[i,1]
 
 
-N=12
-num_communities=8
+N=9
+num_communities=5 #TODO Now it is only possible to do with the same amound of communities because of the locations
 model = Dataset(SES_WOA[:N], part_huishoudens[:N], num_communities, Locs)
 
 #%% plot 
@@ -252,6 +305,7 @@ img = plt.imread("Data/amsterdam.PNG")
 fig, ax = plt.subplots()
 ax.imshow(img, extent=[-3000,4500, -2300, 2000])
 ax.scatter(Locs[:,0],Locs[:,1])
+ax.scatter(model.community_locs[:,0],model.community_locs[:,1])
 ax.scatter(0,0)
 plt.show()
 
@@ -274,3 +328,4 @@ print(
   "\n\nSES_WOA:\n", model.mapped_SES_WOA().numpy(),
   "\n\nPopulation Size:\n", tf.round( model.mapped_population_size() ).numpy()
   )
+
