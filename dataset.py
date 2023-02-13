@@ -7,10 +7,12 @@ Created on Fri Jan 27 15:35:15 2023
 import numpy as np
 import tensorflow as tf
 import pandas as pd
+import matplotlib.pyplot as plt
 from geopy.geocoders import Nominatim
 from geopy import distance
 
 tf.config.run_functions_eagerly(True)  ### TODO should be False
+plt.close('all')
 
 class Dataset(tf.keras.Model):
     '''
@@ -67,14 +69,14 @@ class Dataset(tf.keras.Model):
     '''
     def __init__(self, Data, Population_size, num_communities):
         super(Dataset, self).__init__()
-        self.Data = tf.Variable(Data[:,None], trainable=False, dtype=tf.float32)
+        self.SES_WOA = tf.Variable(Data[:,None], trainable=False, dtype=tf.float32)
         self.population_size = tf.Variable(Population_size[:,None], trainable=False, dtype=tf.float32)
         self.num_communities = num_communities
         self.Map = self.initialise_map()
 
         # The matrix used to calculate entropy, and their original values
-        self.Pk = tf.matmul(self.Data , tf.ones([self.Data.shape[1], self.num_communities]) )
-        self.Pk.trainable = False
+        #self.Pk = tf.matmul(self.SES_WOA , tf.ones([self.SES_WOA.shape[1], self.num_communities]) )
+        #self.Pk.trainable = False
         
         # population parameters
         self.population_bounds = tf.Variable([.8, 1.2], trainable=False, dtype=tf.float32) # the boundaries by which the population can grow or shrink of their original size
@@ -88,29 +90,27 @@ class Dataset(tf.keras.Model):
     def call(self, inputs):
         '''transforms the inputs according to the Map'''
         #TODO make it such that the SES values are multiplied with the population distribution, not just the map
-        #return tf.matmul(self.population_Map(), inputs)
         return tf.matmul(self.normalise_map(), inputs)
     
     
-    @tf.function
-    def calculate_entropy(self, Plogits):
-        '''
-        takes in the (mapped) matrix Pk and creates Qk 
-        then calculates the entropy via sum( Pk*log(Pk/Qk) )
-        As lim_x->0 x*ln(x) = 0 (lHopital), we force this also.
-        '''    
-        Qlogits = tf.transpose(Plogits)
-        Entropy = tf.reduce_sum( Plogits * tf.math.log(Plogits / Qlogits) )
-        Entropy = tf.where(Plogits==0., Entropy, 0. )  # force to go to zero
-        return Entropy
+    #@tf.function
+    #def calculate_entropy(self, Plogits):
+    #    '''
+    #    takes in the (mapped) matrix Pk and creates Qk 
+    #    then calculates the entropy via sum( Pk*log(Pk/Qk) )
+    #    As lim_x->0 x*ln(x) = 0 (lHopital), we force this also.
+    #    '''    
+    #    Qlogits = tf.transpose(Plogits)
+    #    Entropy = tf.reduce_sum( Plogits * tf.math.log(Plogits / Qlogits) )
+    #    Entropy = tf.where(Plogits==0., Entropy, 0. )  # force to go to zero
+    #    return Entropy
     
     
     @tf.function
-    def calculate_loss(self, Plogits):
+    def calculate_loss(self):
     # Total loss with regularization
         # Original loss function (entropy)
-        #original_loss = self.calculate_entropy(Plogits)
-        original_loss = tf.math.reduce_variance( self(self.Data) )
+        original_loss = tf.math.reduce_variance( self(self.SES_WOA) )
         
         # L1 regularization term to let the map be positive
         L1_pos = tf.reduce_sum(tf.abs(tf.where(self.Map < 0., self.Map, 0.)))
@@ -138,20 +138,18 @@ class Dataset(tf.keras.Model):
         initial guess still tries to make it unitary, but either splits the remaining 
         initial communities over the final communities, or the other way around.
         '''
-        #Map = tf.eye(self.Data.shape[0])
-        #Map = (1/self.num_communities)*tf.ones((self.num_communities, self.Data.shape[0]))
-        Map = np.zeros([self.num_communities, self.Data.shape[0]])
-        if self.num_communities < self.Data.shape[0]:
+        Map = np.zeros([self.num_communities, self.SES_WOA.shape[0]])
+        if self.num_communities < self.SES_WOA.shape[0]:
             for i in range(self.num_communities):
                 Map[i,i]=1.
             Map[:,self.num_communities:] = 1 / self.num_communities
         else:
             # the factor by which we split the communities to spread them
-            diff = self.num_communities-self.Data.shape[0]
+            diff = self.num_communities-self.SES_WOA.shape[0]
             factor = 1 / self.num_communities
-            for i in range(self.Data.shape[0]):
+            for i in range(self.SES_WOA.shape[0]):
                 Map[i,i]=1. - factor*diff
-            Map[self.Data.shape[0]:,:] = factor 
+            Map[self.SES_WOA.shape[0]:,:] = factor 
         #TODO for some reason having the final amount of communities bigger makes calculations explode
         return tf.Variable(Map, dtype=tf.float32, trainable=True)
     
@@ -170,8 +168,8 @@ class Dataset(tf.keras.Model):
         return self(self.population_size)
     
     @tf.function
-    def mapped_Data(self):
-        return self(self.Data)
+    def mapped_SES_WOA(self):
+        return self(self.SES_WOA)
     
     @tf.function
     def population_Map(self):
@@ -179,10 +177,10 @@ class Dataset(tf.keras.Model):
     
 
     @tf.function
-    def train_step(self, input_data):
+    def train_step(self):
         with tf.GradientTape() as tape:
-            logits = self(input_data)
-            loss_value = self.calculate_loss(logits)
+            #logits = self(input_data)
+            loss_value = self.calculate_loss()
         grads = tape.gradient(loss_value, self.trainable_variables)
         optimizer.apply_gradients(zip(grads, self.trainable_variables))
         return loss_value
@@ -241,22 +239,19 @@ for i in range(wijk.shape[0]):
     Locs[i,1] = distance.distance( latlon0 , [latlon0[0], geo_loc.longitude] ).m
     Locs[i,1] = Locs[i,1]* 1 if (latlon0[1] - geo_loc.longitude > 0) else -1
     
-    
+plt.scatter(Locs[:,0],Locs[:,1])
 
 N=12
 num_communities=8
 model = Dataset(SES_WOA[:N], part_huishoudens[:N], num_communities)
 
-#%%
-#age = tf.Variable(np.array([40,45,30,55]), dtype=tf.float32)
-#pop_dense = tf.Variable(np.array([500,800,1200,400]), dtype=tf.float32)
-#model = Dataset(age, pop_dense)
-input_data = model.Pk
+
+#%% optimization
 optimizer = tf.keras.optimizers.Adam(learning_rate=0.01)
 
 # Training loop
 for i in range(800):
-    loss_value = model.train_step(input_data)
+    loss_value = model.train_step()
     if i % 100 == 0:
         print("Step: {}, Loss: {}".format(i, loss_value.numpy()))
       
@@ -266,6 +261,6 @@ print(
   "\nThe Map is:\n",tf.round( model.normalise_map() * 100 , 1 ).numpy(),
   "\n\nwhich counts up to:\n",tf.reduce_sum(tf.round( model.normalise_map() * 100 , 1 ).numpy(), axis=0),
   "\nThe Population Map is:\n",tf.round( model.population_Map()).numpy(),
-  "\n\nSES_WOA:\n", model.mapped_Data().numpy(),
+  "\n\nSES_WOA:\n", model.mapped_SES_WOA().numpy(),
   "\n\nPopulation Size:\n", tf.round( model.mapped_population_size() ).numpy()
   )
