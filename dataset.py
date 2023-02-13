@@ -67,12 +67,13 @@ class Dataset(tf.keras.Model):
         I think it would be better to calculate the variance of the SES_WOA
         
     '''
-    def __init__(self, Data, Population_size, num_communities):
+    def __init__(self, Data, Population_size, num_communities, Locs):
         super(Dataset, self).__init__()
         self.SES_WOA = tf.Variable(Data[:,None], trainable=False, dtype=tf.float32)
         self.population_size = tf.Variable(Population_size[:,None], trainable=False, dtype=tf.float32)
         self.num_communities = num_communities
         self.Map = self.initialise_map()
+        self.Locs = Locs
 
         # The matrix used to calculate entropy, and their original values
         #self.Pk = tf.matmul(self.SES_WOA , tf.ones([self.SES_WOA.shape[1], self.num_communities]) )
@@ -124,7 +125,9 @@ class Dataset(tf.keras.Model):
         # total L1  reegularization
         L1_reg = L1_pos + L1_pop
         
-        #TODO add something about distances here
+        #limit the distances
+        
+        
         
         return original_loss + L1_reg
     
@@ -235,15 +238,22 @@ for i in range(wijk.shape[0]):
     # putting all the coordinates in a grid
     latlon = [ geo_loc.latitude , geo_loc.longitude ]
     Locs[i,0] = distance.distance( latlon0 , [geo_loc.latitude, latlon0[1]] ).m
-    Locs[i,0] = Locs[i,0]* 1 if (latlon0[0] - geo_loc.latitude > 0) else -1
+    Locs[i,0] = Locs[i,0] if (latlon0[0] - geo_loc.latitude > 0) else -Locs[i,0]
     Locs[i,1] = distance.distance( latlon0 , [latlon0[0], geo_loc.longitude] ).m
-    Locs[i,1] = Locs[i,1]* 1 if (latlon0[1] - geo_loc.longitude > 0) else -1
-    
-plt.scatter(Locs[:,0],Locs[:,1])
+    Locs[i,1] = Locs[i,1] if (latlon0[1] - geo_loc.longitude > 0) else -Locs[i,1]
+
 
 N=12
 num_communities=8
-model = Dataset(SES_WOA[:N], part_huishoudens[:N], num_communities)
+model = Dataset(SES_WOA[:N], part_huishoudens[:N], num_communities, Locs)
+
+#%% plot 
+img = plt.imread("Data/amsterdam.PNG")
+fig, ax = plt.subplots()
+ax.imshow(img, extent=[-3000,4500, -2300, 2000])
+ax.scatter(Locs[:,0],Locs[:,1])
+ax.scatter(0,0)
+plt.show()
 
 
 #%% optimization
