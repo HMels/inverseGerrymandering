@@ -66,24 +66,53 @@ class Dataset(tf.keras.Model):
             need to map the SES_WOA to fit in an interval of [0,1]
         I think it would be better to calculate the variance of the SES_WOA
         
+        
+    Creating the communities
+        In this case we totally assume the the geographical locations of the neighbourhoods
+            are the centerpoints. This is false.
+        Right now we use those locations to extrapolate where the locations of the new
+            communities should be in initialise_communities.
+        This should ofcourse be better clarified. Center locations just do not represent
+            what we are interested in.
+            
+    
+    Calculating the distances
+        We will work with a matrix that is representative of the distances between the
+            neighbourhood_locs and the community_locs 
+        
     '''
-    def __init__(self, Data, Population_size, num_communities, Locs):
+    def __init__(self, SES_WOA, Population_size, N_communities, neighbourhood_locs):
         super(Dataset, self).__init__()
-        self.SES_WOA = tf.Variable(Data[:,None], trainable=False, dtype=tf.float32)
+        # initialise input
+        self.SES_WOA = tf.Variable(SES_WOA[:,None], trainable=False, dtype=tf.float32)
         self.population_size = tf.Variable(Population_size[:,None], trainable=False, dtype=tf.float32)
-        self.num_communities = num_communities
+        self.neighbourhood_locs = tf.Variable(neighbourhood_locs, trainable=False, dtype=tf.float32)
+        
+        # initialise parameters
+        self.N_communities = N_communities
+        self.N_neighbourhoods = self.SES_WOA.shape[0]
         self.Map = self.initialise_map()
-        self.Locs = Locs
-        self.community_locs = self.initialise_communities(self.num_communities)
-
+        
+        # create the center points on the new communities 
+        if self.N_communities == self.N_neighbourhoods:
+            self.community_locs = tf.Variable(neighbourhood_locs, trainable=False, dtype=tf.float32)
+        elif self.N_communities < self.N_neighbourhoods:
+            self.community_locs = self.initialise_communities(self.N_communities)
+        else:
+            #TODO This only works for N_communities <= N. Make it work for the other way
+            raise Exception("Model is not able to create more communities than were originally present!")
+        
+        # initialise the distance matrix 
+        self.initialise_distances()
+        
         # The matrix used to calculate entropy, and their original values
-        #self.Pk = tf.matmul(self.SES_WOA , tf.ones([self.SES_WOA.shape[1], self.num_communities]) )
+        #self.Pk = tf.matmul(self.SES_WOA , tf.ones([self.SES_WOA.shape[1], self.N_communities]) )
         #self.Pk.trainable = False
         
         # population parameters
         self.population_bounds = tf.Variable([.8, 1.2], trainable=False, dtype=tf.float32) # the boundaries by which the population can grow or shrink of their original size
         self.tot_pop = tf.reduce_sum(self.population_size)
-        self.avg_pop = self.tot_pop / self.num_communities
+        self.avg_pop = self.tot_pop / self.N_communities
         self.popBoundHigh  = self.population_bounds[1] * self.avg_pop
         self.popBoundLow  = self.population_bounds[0] * self.avg_pop
         
@@ -112,63 +141,67 @@ class Dataset(tf.keras.Model):
     def calculate_loss(self):
     # Total loss with regularization
         # Original loss function (entropy)
-        original_loss = tf.math.reduce_variance( self(self.SES_WOA) )
+        SES_variance = tf.math.reduce_variance( self(self.SES_WOA) )
         
         # L1 regularization term to let the map be positive
-        L1_pos = tf.reduce_sum(tf.abs(tf.where(self.Map < 0., self.Map, 0.)))
+        L2_popPositive = tf.reduce_sum(tf.abs(tf.where(self.Map < 0., self.Map, 0.)))
         
         # L1 regularization term for population limits
         mapPop = self(self.population_size)    # the mapped population size
         popCost = tf.reduce_sum(self.Map, axis = 1) / self.Map.shape[1]  # the cost for erring
-        L1_pop = tf.reduce_sum(tf.where(mapPop > self.popBoundHigh, popCost, 0)+
+        L1_popBounds = tf.reduce_sum(tf.where(mapPop > self.popBoundHigh, popCost, 0)+
                                tf.where(mapPop < self.popBoundLow, popCost, 0))
         
-        # total L1  reegularization
-        L1_reg = L1_pos + L1_pop
+        # add regularisation from distances
+        pop_distances = tf.multiply(self(self.population_size), self.distances)
+        L1_dist = tf.reduce_sum(pop_distances / self.tot_pop / self.max_distance )
         
-        #TODO limit the distances       
+        # remember the partial costs
+        self.SES_variance = SES_variance
+        self.L2_popPositive = L2_popPositive
+        self.L1_popBounds = L1_popBounds
+        self.L1_dist = L1_dist
         
-        
-        return original_loss + L1_reg #+ dist_reg
+        return SES_variance + L2_popPositive + L1_popBounds #+ L1_dist
     
     
     @tf.function
-    def initialize_map(self):
+    def initialise_map(self):
         """
-        Initialize the Map matrix that maps the data. The map has the size
+        Initialise the Map matrix that maps the data. The map has the size
         (final number of communities x initial number of communities). When both are equal,
         the maps initial guess is an unitary matrix. In case this differs, the
         initial guess still tries to make it unitary, but either splits the remaining
         initial communities over the final communities, or the other way around.
     
         Returns:
-            A TensorFlow variable with shape (num_communities, SES_WOA.shape[0]), 
-            initialized with the desired values and set as trainable.
+            A TensorFlow variable with shape (N_communities, SES_WOA.shape[0]), 
+            initialised with the desired values and set as trainable.
         """
-        # Initialize the Map matrix with zeros
-        Map = np.zeros([self.num_communities, self.SES_WOA.shape[0]])
+        # initialise the Map matrix with zeros
+        Map = np.zeros([self.N_communities, self.N_neighbourhoods])
         
         # When the final number of communities is smaller than the initial number
-        if self.num_communities < self.SES_WOA.shape[0]:
+        if self.N_communities < self.N_neighbourhoods:
             # Assign 1 to the diagonal elements
-            for i in range(self.num_communities):
+            for i in range(self.N_communities):
                 Map[i, i] = 1.
-            # Assign 1 / num_communities to the remaining elements
-            Map[:, self.num_communities:] = 1 / self.num_communities
+            # Assign 1 / N_communities to the remaining elements
+            Map[:, self.N_communities:] = 1 / self.N_communities
         else:
             # When the final number of communities is greater than the initial number
             # Calculate the factor by which we split the communities to spread them
-            diff = self.num_communities - self.SES_WOA.shape[0]
-            factor = 1 / self.num_communities
+            diff = self.N_communities - self.N_neighbourhoods
+            factor = 1 / self.N_communities
             # Assign (1 - factor * diff) to the diagonal elements
-            for i in range(self.SES_WOA.shape[0]):
+            for i in range(self.N_neighbourhoods):
                 Map[i, i] = 1. - factor * diff
             # Assign factor to the remaining elements
-            Map[self.SES_WOA.shape[0]:, :] = factor
+            Map[self.N_neighbourhoods:, :] = factor
             
         #TODO for some reason having the final amount of communities bigger makes calculations explode
         
-        # Return the initialized Map matrix as a TensorFlow variable
+        # Return the initialised Map matrix as a TensorFlow variable
         return tf.Variable(Map, dtype=tf.float32, trainable=True)
     
     
@@ -195,42 +228,63 @@ class Dataset(tf.keras.Model):
     
     
     @tf.function
-    def initialise_communities(self, num_communities):
+    def initialise_communities(self, N_communities):
         """
         Parameters
         ----------
-        num_communities : int32
+        N_communities : int32
             The number of communities we want to end up with.
 
         Returns
         -------
-        community_locs : float32 2D array
-            Array containing the locations of the newly created communities 
+        community_locs : float32 (N_communities x 2) array
+            Array containing the grid locations of the newly created communities 
             
         This function uses KNN to initialise the locations of communities by sparsifying 
         the input locations.
         """
-        #TODO This only works for num_communities < N. Make it work for the other way
-        
         # Define the number of nearest neighbors to consider
-        k = tf.cast(tf.math.ceil(self.Locs.shape[0] / num_communities),tf.int32)
+        k = tf.cast(tf.math.ceil(self.neighbourhood_locs.shape[0] / N_communities),tf.int32)
 
         # Calculate the Euclidean distances between all points in the data set
-        distances = tf.reduce_sum(tf.square(tf.expand_dims(self.Locs, 1) - tf.expand_dims(self.Locs, 0)), axis=-1)
+        distances = tf.reduce_sum(tf.square(tf.expand_dims(self.neighbourhood_locs, 1) - tf.expand_dims(self.neighbourhood_locs, 0)), axis=-1)
 
         # Find the indices of the nearest neighbors for each point
         _, nearest_neighbor_indices = tf.nn.top_k(-distances, k=k, sorted=True)
 
         # Gather the nearest neighbors for each point
-        nearest_neighbors = tf.gather(self.Locs, nearest_neighbor_indices, axis=0)
+        nearest_neighbors = tf.gather(self.neighbourhood_locs, nearest_neighbor_indices, axis=0)
 
         # Reshape the nearest neighbors tensor into the desired shape
         new_locs = tf.reshape(nearest_neighbors, [-1, k, 2])
 
         # Pick every M-th point from the new data set
         sparse_indices = tf.range(0, tf.shape(new_locs)[0], k)
-        sparse_Locs = tf.gather(new_locs, tf.cast(sparse_indices, tf.int32), axis=0)
-        return tf.reduce_mean(sparse_Locs, axis=1)
+        sparse_locs = tf.cast( tf.gather(new_locs, tf.cast(sparse_indices, tf.int32), axis=0), dtype=tf.float32)
+        return tf.reduce_mean(sparse_locs, axis=1)
+    
+    
+    @tf.function
+    def initialise_distances(self):
+        """
+        Input
+        neighbourhood_locs : float32 (N_communities x 2) array
+            Array containing the grid locations of the initial neighbourhoods 
+        community_locs : float32 (N_neighbourhoods x 2) array
+            Array containing the grid locations of the newly created communities 
+
+        Returns
+        -------
+        distances : float32 (N_neighbourhoods x N_communities) array
+            Array containing the differences in distance between all indices
+        """
+        # Repeat the rows of neighbourhood_locs M times and the rows of community_locs N times
+        neighbourhood_locs_repeated = tf.repeat(tf.expand_dims(self.neighbourhood_locs, axis=0), self.N_communities, axis=0)
+        community_locs_repeated = tf.tile(tf.expand_dims(self.community_locs, axis=1), [1, self.N_neighbourhoods, 1])
+
+        # Calculate the pairwise distances between all pairs of locations using the Euclidean distance formula
+        self.distances = tf.sqrt(tf.reduce_sum(tf.square(neighbourhood_locs_repeated - community_locs_repeated), axis=-1))
+        self.max_distance = tf.reduce_max(self.distances)
         
 
     @tf.function
@@ -297,8 +351,8 @@ for i in range(wijk.shape[0]):
 
 
 N=9
-num_communities=5 #TODO Now it is only possible to do with the same amound of communities because of the locations
-model = Dataset(SES_WOA[:N], part_huishoudens[:N], num_communities, Locs)
+N_communities=5 
+model = Dataset(SES_WOA[:N], part_huishoudens[:N], N_communities, Locs)
 
 #%% plot 
 img = plt.imread("Data/amsterdam.PNG")
@@ -318,6 +372,9 @@ for i in range(800):
     loss_value = model.train_step()
     if i % 100 == 0:
         print("Step: {}, Loss: {}".format(i, loss_value.numpy()))
+        print("partial costs: \n   SES_variance = ",model.SES_variance.numpy(),
+              "\n   L2_popPositive = ",model.L2_popPositive.numpy(),"\n   L1_popBounds = ",
+              model.L1_popBounds.numpy(),"\n   L1_dist = ",model.L1_dist.numpy())
       
         
 #%% output
