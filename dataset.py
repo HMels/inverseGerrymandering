@@ -142,7 +142,15 @@ class Dataset(tf.keras.Model):
         self.avg_pop = self.tot_pop / self.N_communities # Average population size
         self.popBoundHigh = self.population_bounds[1] * self.avg_pop # Upper population boundary
         self.popBoundLow = self.population_bounds[0] * self.avg_pop # Lower population boundary
-    
+        
+        # Initialize the weights
+        self.weight_SESvariance = 1
+        self.weight_popPositive = 1
+        self.weight_popBounds = 1
+        self.weight_distance = 1 
+        
+        self.initialize_weights()
+        
     
     @property
     def mapped_population_size(self):
@@ -163,6 +171,75 @@ class Dataset(tf.keras.Model):
         self.Map.assign(self.normalize_map()) # Normalize the community map
         return tf.matmul(self.Map, inputs)
     
+
+    #@tf.function
+    #def calculate_entropy(self, Plogits):
+    #    '''
+    #    takes in the (mapped) matrix Pk and creates Qk 
+    #    then calculates the entropy via sum( Pk*log(Pk/Qk) )
+    #    As lim_x->0 x*ln(x) = 0 (lHopital), we force this also.
+    #    '''    
+    #    Qlogits = tf.transpose(Plogits)
+    #    Entropy = tf.reduce_sum( Plogits * tf.math.log(Plogits / Qlogits) )
+    #    Entropy = tf.where(Plogits==0., Entropy, 0. )  # force to go to zero
+    #    return Entropy
+    
+    
+    @tf.function
+    def cost_fn(self):
+        # new populations
+        mappedPopulation = self.mapped_population_size
+        mappedPopulation_mat = self.population_Map
+        
+        # Calculate variance of socioeconomic data mapped to population map
+        SES_variance = tf.math.reduce_variance(tf.matmul(self.normalize_map(), self.socioeconomic_data)*10) * self.weight_SESvariance
+        #SES_variance = tf.math.reduce_variance(tf.matmul(mappedPopulation_mat, self.socioeconomic_data) / tf.reduce_sum(mappedPopulation/5)*10) * self.weight_SESvariance
+        #SES_variance = tf.math.reduce_variance(tf.matmul(mappedPopulation_mat, self.socioeconomic_data) ) * self.weight_SESvariance
+    
+        # Regularization term to ensure population map is positive
+        L2_popPositive = (tf.reduce_sum(tf.abs(tf.where(self.Map < 0., self.Map, 0.))) * self.weight_popPositive*100) ** 2
+    
+        # Regularization term for population limits
+        L1_popBounds = tf.reduce_sum(tf.where(mappedPopulation > self.popBoundHigh, tf.abs(mappedPopulation-self.popBoundHigh), 0) +
+                                     tf.where(mappedPopulation < self.popBoundLow, tf.abs(mappedPopulation-self.popBoundLow), 0)) * ( 
+                                         self.weight_popBounds / self.tot_pop 
+                                         )
+    
+        # Add regularization term based on distances
+        pop_distances = tf.multiply(mappedPopulation_mat, self.distances)
+        L1_distance = tf.reduce_sum(pop_distances / self.tot_pop / self.max_distance)*self.weight_distance
+                
+        # Record the partial costs for inspection
+        self.SES_variance = SES_variance
+        self.L2_popPositive = L2_popPositive
+        self.L1_popBounds = L1_popBounds
+        self.L1_distance = L1_distance
+    
+        # Return the sum of all partial costs
+        return SES_variance + L1_popBounds + L2_popPositive + L1_distance
+    
+    
+    @tf.function
+    def train_step(self):
+        with tf.GradientTape() as tape:
+            loss_value = self.cost_fn()
+        grads = tape.gradient(loss_value, self.trainable_variables)
+        optimizer.apply_gradients(zip(grads, self.trainable_variables))
+        return loss_value    
+    
+    
+    @tf.function
+    def initialize_weights(self):
+        # Normalizes the weights such that relatively all costs start at 1. 
+        # Then it multplies the normalized weights by the assigned weights
+        self.weight_SESvariance = self.weight_SESvariance / ( 
+            tf.math.reduce_variance(tf.matmul(self.normalize_map(), self.socioeconomic_data)*10)
+            #tf.math.reduce_variance(tf.matmul(self.population_Map, self.socioeconomic_data) )
+            )
+        self.weight_distance = self.weight_distance / ( 
+            tf.reduce_sum(tf.multiply(self.population_Map, self.distances) / self.tot_pop / self.max_distance)
+            )
+    
     
     @tf.function
     def initialize_map(self):
@@ -177,6 +254,7 @@ class Dataset(tf.keras.Model):
             A TensorFlow variable with shape (N_communities, N_neighbourhoods), 
             initialized with the desired values and set as trainable.
         """
+        # TODO fill the map such that it spreads populations over nearest neighbours
         # Initialize the Map matrix with zeros
         Map = np.zeros([self.N_communities, self.N_neighbourhoods])
         
@@ -278,56 +356,6 @@ class Dataset(tf.keras.Model):
         return self.distances
     
 
-    #@tf.function
-    #def calculate_entropy(self, Plogits):
-    #    '''
-    #    takes in the (mapped) matrix Pk and creates Qk 
-    #    then calculates the entropy via sum( Pk*log(Pk/Qk) )
-    #    As lim_x->0 x*ln(x) = 0 (lHopital), we force this also.
-    #    '''    
-    #    Qlogits = tf.transpose(Plogits)
-    #    Entropy = tf.reduce_sum( Plogits * tf.math.log(Plogits / Qlogits) )
-    #    Entropy = tf.where(Plogits==0., Entropy, 0. )  # force to go to zero
-    #    return Entropy
-    
-    
-    @tf.function
-    def cost_fn(self):
-        # Calculate variance of socioeconomic data mapped to population map
-        SES_variance = tf.math.reduce_variance(tf.matmul(self.population_Map, self.socioeconomic_data)) / 10000
-    
-        # Regularization term to ensure population map is positive
-        L2_popPositive = (tf.reduce_sum(tf.abs(tf.where(self.Map < 0., self.Map, 0.))) * 100) ** 2
-    
-        # Regularization term for population limits
-        mapPop = model.mapped_population_size
-        popCost = tf.reduce_sum(self.Map, axis=1) / self.Map.shape[1]  # the cost for erring
-        L1_popBounds = tf.reduce_sum(tf.where(mapPop > self.popBoundHigh, popCost, 0) +
-                                     tf.where(mapPop < self.popBoundLow, popCost, 0))
-    
-        # Add regularization term based on distances
-        pop_distances = tf.multiply(mapPop, self.distances)
-        L1_distance = tf.reduce_sum(pop_distances / self.tot_pop / self.max_distance)
-    
-        # Record the partial costs for inspection
-        self.SES_variance = SES_variance
-        self.L2_popPositive = L2_popPositive
-        self.L1_popBounds = L1_popBounds
-        self.L1_distance = L1_distance
-    
-        # Return the sum of all partial costs
-        return SES_variance + L1_popBounds + L1_distance + L2_popPositive
-    
-    
-    @tf.function
-    def train_step(self):
-        with tf.GradientTape() as tape:
-            loss_value = self.cost_fn()
-        grads = tape.gradient(loss_value, self.trainable_variables)
-        optimizer.apply_gradients(zip(grads, self.trainable_variables))
-        return loss_value    
-    
-
 #%% load data
 # Load SES data
 # Source: https://opendata.cbs.nl/statline/#/CBS/nl/dataset/85163NED/table?ts=1669130926836
@@ -396,7 +424,7 @@ Niterations = 50 # Number of iterations for training
 model = Dataset(SES_WOA[:N], part_huishoudens[:N], N_communities, Locs)
 
 # Define optimization algorithm and learning rate
-optimizer = tf.keras.optimizers.Adagrad(learning_rate=1)
+optimizer = tf.keras.optimizers.Adagrad(learning_rate=.1)
 
 # Define variables to store costs during training
 costs = np.zeros((Niterations, 5))
@@ -436,7 +464,7 @@ plt.legend()
 
 # histogram of the economic data
 fig2, ax2 = plt.subplots()
-num_bins = SES_WOA.shape[0]
+num_bins = SES_WOA.shape[0]*2
 bin_edges = np.linspace(np.min(np.append(SES_WOA,model.mapped_socioeconomic_data)), 
                         np.max(np.append(SES_WOA,model.mapped_socioeconomic_data)), num_bins+1)
 n, bins, patches = ax2.hist(SES_WOA, bins=bin_edges, alpha=0.5, label='SES_WOA', density=True)
