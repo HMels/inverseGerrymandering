@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 from geopy.geocoders import Nominatim
 from geopy import distance
 
-tf.config.run_functions_eagerly(True)  ### TODO should be False
+#tf.config.run_functions_eagerly(True)  ### TODO should be False
 plt.close('all')
 
 
@@ -116,7 +116,6 @@ class Dataset(tf.keras.Model):
         # Initialize parameters
         self.N_communities = N_communities
         self.N_neighbourhoods = self.socioeconomic_data.shape[0]
-        self.Map = self.initialize_map() # Community map
         
         # Create the center points for the new communities
         if self.N_communities == self.N_neighbourhoods:
@@ -129,8 +128,9 @@ class Dataset(tf.keras.Model):
             # If the number of new communities is greater than the number of neighborhoods, raise an exception
             raise Exception("Model is not able to create more communities than were originally present!")
         
-        # Initialize the distance matrix
-        self.initialize_distances()
+        # Initialize the distance matrix and the map
+        self.initialize_distances()        
+        self.Map = self.initialize_map() # Community map
         
         # The matrix used to calculate entropy, and their original values
         #self.Pk = tf.matmul(self.socioeconomic_data , tf.ones([self.socioeconomic_data.shape[1], self.N_communities]) )
@@ -144,10 +144,10 @@ class Dataset(tf.keras.Model):
         self.popBoundLow = self.population_bounds[0] * self.avg_pop # Lower population boundary
         
         # Initialize the weights
-        self.weight_SESvariance = 1
-        self.weight_popPositive = 1
-        self.weight_popBounds = 1
-        self.weight_distance = 1 
+        self.weight_SESvariance = 20
+        self.weight_popPositive = 10
+        self.weight_popBounds = 10
+        self.weight_distance = 10
         
         self.initialize_weights()
         
@@ -187,36 +187,34 @@ class Dataset(tf.keras.Model):
     
     @tf.function
     def cost_fn(self):
-        # new populations
-        mappedPopulation = self.mapped_population_size
-        mappedPopulation_mat = self.population_Map
-        
         # Calculate variance of socioeconomic data mapped to population map
-        SES_variance = tf.math.reduce_variance(tf.matmul(self.normalize_map(), self.socioeconomic_data)*10) * self.weight_SESvariance
-        #SES_variance = tf.math.reduce_variance(tf.matmul(mappedPopulation_mat, self.socioeconomic_data) / tf.reduce_sum(mappedPopulation/5)*10) * self.weight_SESvariance
-        #SES_variance = tf.math.reduce_variance(tf.matmul(mappedPopulation_mat, self.socioeconomic_data) ) * self.weight_SESvariance
+        #SES_variance = tf.math.reduce_variance(tf.matmul(self.normalize_map(), self.socioeconomic_data)*10) * self.weight_SESvariance
+        #SES_variance = tf.math.reduce_variance(tf.matmul(self.population_Map, self.socioeconomic_data) / tf.reduce_sum(mappedPopulation/5)*10) * self.weight_SESvariance
+        SES_variance = tf.math.reduce_variance(tf.matmul(self.population_Map, self.socioeconomic_data) ) * self.weight_SESvariance
     
         # Regularization term to ensure population map is positive
-        L2_popPositive = (tf.reduce_sum(tf.abs(tf.where(self.Map < 0., self.Map, 0.))) * self.weight_popPositive*100) ** 2
+        cost_popPositive = (tf.reduce_sum(tf.abs(tf.where(self.Map < 0., self.Map, 0.))) * self.weight_popPositive*100)
     
         # Regularization term for population limits
-        L1_popBounds = tf.reduce_sum(tf.where(mappedPopulation > self.popBoundHigh, tf.abs(mappedPopulation-self.popBoundHigh), 0) +
-                                     tf.where(mappedPopulation < self.popBoundLow, tf.abs(mappedPopulation-self.popBoundLow), 0)) * ( 
+        cost_popBounds = tf.reduce_sum(tf.where(self.mapped_population_size > self.popBoundHigh,
+                                              tf.abs(self.mapped_population_size-self.popBoundHigh), 0) +
+                                     tf.where(self.mapped_population_size < self.popBoundLow, 
+                                              tf.abs(self.mapped_population_size-self.popBoundLow), 0)) * ( 
                                          self.weight_popBounds / self.tot_pop 
                                          )
     
         # Add regularization term based on distances
-        pop_distances = tf.multiply(mappedPopulation_mat, self.distances)
-        L1_distance = tf.reduce_sum(pop_distances / self.tot_pop / self.max_distance)*self.weight_distance
+        pop_distances = tf.multiply(self.population_Map, self.distances)
+        cost_distance = tf.reduce_sum(pop_distances / self.tot_pop / self.max_distance)*self.weight_distance
                 
         # Record the partial costs for inspection
         self.SES_variance = SES_variance
-        self.L2_popPositive = L2_popPositive
-        self.L1_popBounds = L1_popBounds
-        self.L1_distance = L1_distance
+        self.L2_popPositive = cost_popPositive**2
+        self.L1_popBounds = cost_popBounds
+        self.L1_distance = cost_distance
     
         # Return the sum of all partial costs
-        return SES_variance + L1_popBounds + L2_popPositive + L1_distance
+        return self.SES_variance + self.L2_popPositive + self.L1_popBounds + self.L1_distance
     
     
     @tf.function
@@ -233,8 +231,8 @@ class Dataset(tf.keras.Model):
         # Normalizes the weights such that relatively all costs start at 1. 
         # Then it multplies the normalized weights by the assigned weights
         self.weight_SESvariance = self.weight_SESvariance / ( 
-            tf.math.reduce_variance(tf.matmul(self.normalize_map(), self.socioeconomic_data)*10)
-            #tf.math.reduce_variance(tf.matmul(self.population_Map, self.socioeconomic_data) )
+            #tf.math.reduce_variance(tf.matmul(self.normalize_map(), self.socioeconomic_data)*10)
+            tf.math.reduce_variance(tf.matmul(self.population_Map, self.socioeconomic_data) )
             )
         self.weight_distance = self.weight_distance / ( 
             tf.reduce_sum(tf.multiply(self.population_Map, self.distances) / self.tot_pop / self.max_distance)
@@ -245,39 +243,27 @@ class Dataset(tf.keras.Model):
     def initialize_map(self):
         """
         Initialize the Map matrix that maps the data. The map has the size
-        (final number of communities x initial number of communities). When both are equal,
-        the maps initial guess is an unitary matrix. In case this differs, the
-        initial guess still tries to make it unitary, but either splits the remaining
-        initial communities over the final communities, or the other way around.
+        (final number of communities x initial number of communities). The map 
+        chooses how to spread around the population over the communities by using 
+        a power third logarithmic distances. So if two neighbourhoods are in the same 
+        order of distance from said community, the map will spread the population 
+        over them equally. However, this spreading around effect becomes strongly 
+        less as distance increases.
     
         Returns:
             A TensorFlow variable with shape (N_communities, N_neighbourhoods), 
             initialized with the desired values and set as trainable.
         """
-        # TODO fill the map such that it spreads populations over nearest neighbours
-        # Initialize the Map matrix with zeros
-        Map = np.zeros([self.N_communities, self.N_neighbourhoods])
+        # we use the third power to make the falloff steep for higher distances
+        Map = tf.exp(-1*( self.distances / tf.reduce_min(self.distances, axis=0) )**3 )
+        Map = np.round(Map, 1) # filter for the 10th percentiles
+        Map = Map / tf.abs(tf.reduce_sum(Map, axis=0) ) # normalise 
         
-        # When the final number of communities is smaller than the initial number
-        if self.N_communities < self.N_neighbourhoods:
-            # Assign 1 to the diagonal elements
-            for i in range(self.N_communities):
-                Map[i, i] = 1.
-            # Assign 1 / N_communities to the remaining elements
-            Map[:, self.N_communities:] = 1 / self.N_communities
-        else:
-            # When the final number of communities is greater than the initial number
-            # Calculate the factor by which we split the communities to spread them
-            diff = self.N_communities - self.N_neighbourhoods
-            factor = 1 / self.N_communities
-            # Assign (1 - factor * diff) to the diagonal elements
-            for i in range(self.N_neighbourhoods):
-                Map[i, i] = 1. - factor * diff
-            # Assign factor to the remaining elements
-            Map[self.N_neighbourhoods:, :] = factor
-            
         # Return the initialized Map matrix as a TensorFlow variable
-        return tf.Variable(Map, dtype=tf.float32, trainable=True)
+        Map = tf.Variable(Map, dtype=tf.float32, trainable=True)
+        self.initial_Map = tf.Variable(Map, dtype=tf.float32, trainable=False)
+        return Map
+    
     
     @tf.function
     def normalize_map(self):
@@ -288,6 +274,7 @@ class Dataset(tf.keras.Model):
         # Divide each row by its sum
         Map = self.Map / tf.abs(tf.reduce_sum(self.Map, axis=0) )
         return Map
+    
     
     @tf.function
     def initialize_communities(self, N_communities):
@@ -354,6 +341,16 @@ class Dataset(tf.keras.Model):
         self.max_distance = tf.reduce_max(self.distances)
         
         return self.distances
+    
+    @tf.function
+    def print_summary(self):
+        print(
+          "\nThe Map is:\n",tf.round( self.normalize_map() * 100 , 1 ).numpy(),
+          "\n\nwhich counts up to:\n",tf.reduce_sum(tf.round( self.normalize_map() * 100 , 1 ).numpy(), axis=0),
+          "\n\nThe Population Map is:\n",tf.round( self.population_Map.numpy()),
+          "\n\nsocioeconomic_data:\n", self.mapped_socioeconomic_data.numpy(),
+          "\n\nPopulation Size:\n", tf.round( self.mapped_population_size ).numpy()
+          ,"\n\n")
     
 
 #%% load data
@@ -429,8 +426,11 @@ optimizer = tf.keras.optimizers.Adagrad(learning_rate=.1)
 # Define variables to store costs during training
 costs = np.zeros((Niterations, 5))
 
+print("INITIAL VALUES: ")
+model.print_summary()
 
 #%% Train the model for Niterations iterations
+print("OPTIMISING...")
 for i in range(Niterations):
     loss_value = model.train_step() # Take one optimization step
     if i % 10 == 0:
@@ -449,6 +449,7 @@ for i in range(Niterations):
     costs[i, 3] = model.L1_popBounds.numpy()
     costs[i, 4] = model.L1_distance.numpy()
 
+print("FINISHED!\n")
 
 #%% Plot cost values over time
 fig1, ax1 = plt.subplots()
@@ -463,13 +464,17 @@ plt.legend()
 
 
 # histogram of the economic data
+SES_initial = tf.matmul(model.initial_Map, SES_WOA[:,None] ).numpy()[:,0]  # the SES values of the initial Map
+SES_mapped = model.mapped_socioeconomic_data.numpy()[:,0]
+SES_append = np.append(np.append(SES_initial, SES_WOA), SES_mapped)
+
 fig2, ax2 = plt.subplots()
 num_bins = SES_WOA.shape[0]*2
-bin_edges = np.linspace(np.min(np.append(SES_WOA,model.mapped_socioeconomic_data)), 
-                        np.max(np.append(SES_WOA,model.mapped_socioeconomic_data)), num_bins+1)
-n, bins, patches = ax2.hist(SES_WOA, bins=bin_edges, alpha=0.5, label='SES_WOA', density=True)
-n, bins, patches = ax2.hist(model.mapped_socioeconomic_data.numpy().flatten(), 
-                            bins=bin_edges, alpha=0.5, label='Mapped SES', density=True)
+bin_edges = np.linspace(np.min(SES_append), np.max(SES_append), num_bins+1)
+n, bins, patches = ax2.hist(SES_WOA, bins=bin_edges, alpha=0.3, label='SES_WOA', density=True)
+n, bins, patches = ax2.hist(SES_initial.flatten(), bins=bin_edges, alpha=0.5, label='Initial SES', density=True)
+n, bins, patches = ax2.hist(SES_mapped.flatten(), 
+                            bins=bin_edges, alpha=0.7, label='Mapped SES', density=True)
 ax2.legend(loc='upper right')
 ax2.set_xlabel('SES')
 ax2.set_ylabel('Frequency')
@@ -488,11 +493,6 @@ ax.scatter(0, 0, alpha=.7) # Plot origin
 plt.legend()
 plt.show()
 
-print(
-  "\nThe Map is:\n",tf.round( model.normalize_map() * 100 , 1 ).numpy(),
-  "\n\nwhich counts up to:\n",tf.reduce_sum(tf.round( model.normalize_map() * 100 , 1 ).numpy(), axis=0),
-  "\n\nThe Population Map is:\n",tf.round( model.population_Map.numpy()),
-  "\n\nsocioeconomic_data:\n", model.mapped_socioeconomic_data.numpy(),
-  "\n\nPopulation Size:\n", tf.round( model.mapped_population_size ).numpy()
-  )
+print("OPTIMISED VALUES: ")
+model.print_summary()
 
