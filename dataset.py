@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 from geopy.geocoders import Nominatim
 from geopy import distance
 
-#tf.config.run_functions_eagerly(True)  ### TODO should be False
+tf.config.run_functions_eagerly(True)  ### TODO should be False
 plt.close('all')
 
 
@@ -144,10 +144,10 @@ class Dataset(tf.keras.Model):
         self.popBoundLow = self.population_bounds[0] * self.avg_pop # Lower population boundary
         
         # Initialize the weights
-        self.weight_SESvariance = 20
-        self.weight_popPositive = 10
-        self.weight_popBounds = 10
-        self.weight_distance = 10
+        self.weight_SESvariance = 2
+        self.weight_popPositive = 1
+        self.weight_popBounds = 1
+        self.weight_distance = 1
         
         self.initialize_weights()
         
@@ -421,7 +421,17 @@ Niterations = 50 # Number of iterations for training
 model = Dataset(SES_WOA[:N], part_huishoudens[:N], N_communities, Locs)
 
 # Define optimization algorithm and learning rate
-optimizer = tf.keras.optimizers.Adagrad(learning_rate=.1)
+optimizer = tf.keras.optimizers.Adamax(learning_rate=.1)
+'''
+# Adagrad doesn't converge below half of the SES value
+# Nadam works but has shocky convergence
+# Adam results in a very uniform map
+# Adamax works well ->  lr=1 fails. 
+#                       lr=.1 might be too uniform
+#                       lr=.01 might be better but handling of weights and reg should be better
+
+#TODO discuss the figures I get. Compare with how good the reguralisation works and use different regs
+'''
 
 # Define variables to store costs during training
 costs = np.zeros((Niterations, 5))
@@ -451,7 +461,20 @@ for i in range(Niterations):
 
 print("FINISHED!\n")
 
-#%% Plot cost values over time
+
+#%% Plot the population on a map of Amsterdam
+img = plt.imread("Data/amsterdam.PNG")
+fig, ax = plt.subplots()
+ax.imshow(img, extent=[-3000, 4500, -2300, 2000])
+ax.scatter(Locs[:, 0], Locs[:, 1], s=part_huishoudens/100, alpha=1, label="Neighbourhoods") # Plot locations
+ax.scatter(model.community_locs[:, 0], model.community_locs[:, 1], s=model.mapped_population_size/100, 
+           alpha=1, label="Communities") # Plot community locations
+ax.scatter(0, 0, alpha=.7) # Plot origin
+plt.legend()
+plt.show()
+
+
+# Plot cost values over time
 fig1, ax1 = plt.subplots()
 ax1.plot(costs[:, 0]-costs[:, 2], label="Total costs", ls="-")
 ax1.plot(costs[:, 1], label="SES variance", ls="--")
@@ -464,33 +487,23 @@ plt.legend()
 
 
 # histogram of the economic data
-SES_initial = tf.matmul(model.initial_Map, SES_WOA[:,None] ).numpy()[:,0]  # the SES values of the initial Map
-SES_mapped = model.mapped_socioeconomic_data.numpy()[:,0]
+SES_initial = tf.matmul(model.population_size[:,0] * model.initial_Map, SES_WOA[:,None] ).numpy()[:,0]  # the SES values of the initial Map
+#SES_mapped = model.mapped_socioeconomic_data.numpy()[:,0]
+SES_mapped = tf.matmul(model.population_Map, model.socioeconomic_data).numpy()
 SES_append = np.append(np.append(SES_initial, SES_WOA), SES_mapped)
 
 fig2, ax2 = plt.subplots()
-num_bins = SES_WOA.shape[0]*2
+num_bins = SES_WOA.shape[0]*4
 bin_edges = np.linspace(np.min(SES_append), np.max(SES_append), num_bins+1)
-n, bins, patches = ax2.hist(SES_WOA, bins=bin_edges, alpha=0.3, label='SES_WOA', density=True)
-n, bins, patches = ax2.hist(SES_initial.flatten(), bins=bin_edges, alpha=0.5, label='Initial SES', density=True)
-n, bins, patches = ax2.hist(SES_mapped.flatten(), 
-                            bins=bin_edges, alpha=0.7, label='Mapped SES', density=True)
+#n, bins, patches = ax2.hist(SES_WOA, bins=bin_edges, alpha=0.3, label='SES_WOA', density=True)
+n, bins, patches = ax2.hist(SES_initial.flatten(), bins=bin_edges, color = 'r',edgecolor = "black",
+                            alpha=0.3, label='Initial SES', density=True)
+n, bins, patches = ax2.hist(SES_mapped.flatten(), bins=bin_edges-bin_edges[0]/2, color = 'g',
+                            alpha=0.5, label='Mapped SES', density=True)
 ax2.legend(loc='upper right')
 ax2.set_xlabel('SES')
 ax2.set_ylabel('Frequency')
-ax2.set_title('Comparison of the economic data and its optimised form')
-plt.show()
-
-
-# Plot the population on a map of Amsterdam
-img = plt.imread("Data/amsterdam.PNG")
-fig, ax = plt.subplots()
-ax.imshow(img, extent=[-3000, 4500, -2300, 2000])
-ax.scatter(Locs[:, 0], Locs[:, 1], s=part_huishoudens/100, alpha=1, label="Neighbourhoods") # Plot locations
-ax.scatter(model.community_locs[:, 0], model.community_locs[:, 1], s=model.mapped_population_size/100, 
-           alpha=1, label="Communities") # Plot community locations
-ax.scatter(0, 0, alpha=.7) # Plot origin
-plt.legend()
+ax2.set_title('Comparison of the economic data by population')
 plt.show()
 
 print("OPTIMISED VALUES: ")
