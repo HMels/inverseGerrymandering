@@ -144,7 +144,7 @@ class Dataset(tf.keras.Model):
         self.popBoundLow = self.population_bounds[0] * self.avg_pop # Lower population boundary
         
         # Initialize the weights
-        self.weight_SESvariance = 2
+        self.weight_SESvariance = 10
         self.weight_popPositive = 1
         self.weight_popBounds = 1
         self.weight_distance = 1
@@ -188,8 +188,6 @@ class Dataset(tf.keras.Model):
     @tf.function
     def cost_fn(self):
         # Calculate variance of socioeconomic data mapped to population map
-        #SES_variance = tf.math.reduce_variance(tf.matmul(self.normalize_map(), self.socioeconomic_data)*10) * self.weight_SESvariance
-        #SES_variance = tf.math.reduce_variance(tf.matmul(self.population_Map, self.socioeconomic_data) / tf.reduce_sum(mappedPopulation/5)*10) * self.weight_SESvariance
         SES_variance = tf.math.reduce_variance(tf.matmul(self.population_Map, self.socioeconomic_data) ) * self.weight_SESvariance
     
         # Regularization term to ensure population map is positive
@@ -231,7 +229,6 @@ class Dataset(tf.keras.Model):
         # Normalizes the weights such that relatively all costs start at 1. 
         # Then it multplies the normalized weights by the assigned weights
         self.weight_SESvariance = self.weight_SESvariance / ( 
-            #tf.math.reduce_variance(tf.matmul(self.normalize_map(), self.socioeconomic_data)*10)
             tf.math.reduce_variance(tf.matmul(self.population_Map, self.socioeconomic_data) )
             )
         self.weight_distance = self.weight_distance / ( 
@@ -265,7 +262,7 @@ class Dataset(tf.keras.Model):
         return Map
     
     
-    @tf.function
+    @tf.function 
     def normalize_map(self):
         '''
         Normalizes the map such that it does not create people or split people 
@@ -293,22 +290,22 @@ class Dataset(tf.keras.Model):
         """
         # Define the number of nearest neighbors to consider
         k = tf.cast(tf.math.ceil(self.neighbourhood_locs.shape[0] / N_communities), tf.int32)
-    
+
         # Calculate the Euclidean distances between all points in the data set
         distances = tf.reduce_sum(tf.square(tf.expand_dims(self.neighbourhood_locs, 1) - tf.expand_dims(self.neighbourhood_locs, 0)), axis=-1)
-    
+
         # Find the indices of the nearest neighbors for each point
         _, nearest_neighbor_indices = tf.nn.top_k(-distances, k=k, sorted=True)
-    
+        
         # Gather the nearest neighbors for each point
         nearest_neighbor_locs = tf.gather(self.neighbourhood_locs, nearest_neighbor_indices, axis=0)
-    
+
         # Reshape the nearest neighbors tensor into the desired shape
         nearest_neighbor_locs_reshaped = tf.reshape(nearest_neighbor_locs, [-1, k, 2])
-    
+
         # Pick every M-th point from the new data set
         # M = k because we want to pick one community from each set of nearest neighbors
-        sparse_indices = tf.range(0, tf.shape(nearest_neighbor_locs_reshaped)[0], k)
+        sparse_indices = tf.round(tf.linspace(0,tf.shape(nearest_neighbor_locs_reshaped)[0]-1, N_communities))
         sparse_locs = tf.cast(tf.gather(nearest_neighbor_locs_reshaped, tf.cast(sparse_indices, tf.int32), axis=0), dtype=tf.float32)
         return tf.reduce_mean(sparse_locs, axis=1)
     
@@ -339,8 +336,8 @@ class Dataset(tf.keras.Model):
         # Calculate the pairwise distances between all pairs of locations using the Euclidean distance formula
         self.distances = tf.sqrt(tf.reduce_sum(tf.square(neighbourhood_locs_repeated - community_locs_repeated), axis=-1))
         self.max_distance = tf.reduce_max(self.distances)
-        
         return self.distances
+    
     
     @tf.function
     def print_summary(self):
@@ -413,12 +410,12 @@ for i in range(wijk.shape[0]):
 
 
 #%% Define model parameters
-N = 9 # Number of locations
+N = 9  # Number of locations
 N_communities = 5 # Number of communities
 Niterations = 50 # Number of iterations for training
 
 # Initialize model with preprocessed data
-model = Dataset(SES_WOA[:N], part_huishoudens[:N], N_communities, Locs)
+model = Dataset(SES_WOA[:N], part_huishoudens[:N], N_communities, Locs[:N,:])
 
 # Define optimization algorithm and learning rate
 optimizer = tf.keras.optimizers.Adamax(learning_rate=.1)
@@ -466,7 +463,7 @@ print("FINISHED!\n")
 img = plt.imread("Data/amsterdam.PNG")
 fig, ax = plt.subplots()
 ax.imshow(img, extent=[-3000, 4500, -2300, 2000])
-ax.scatter(Locs[:, 0], Locs[:, 1], s=part_huishoudens/100, alpha=1, label="Neighbourhoods") # Plot locations
+ax.scatter(Locs[:N, 0], Locs[:N, 1], s=part_huishoudens[:N]/100, alpha=1, label="Neighbourhoods") # Plot locations
 ax.scatter(model.community_locs[:, 0], model.community_locs[:, 1], s=model.mapped_population_size/100, 
            alpha=1, label="Communities") # Plot community locations
 ax.scatter(0, 0, alpha=.7) # Plot origin
@@ -487,7 +484,7 @@ plt.legend()
 
 
 # histogram of the economic data
-SES_initial = tf.matmul(model.population_size[:,0] * model.initial_Map, SES_WOA[:,None] ).numpy()[:,0]  # the SES values of the initial Map
+SES_initial = tf.matmul(model.population_size[:,0] * model.initial_Map, SES_WOA[:N,None] ).numpy()[:,0]  # the SES values of the initial Map
 #SES_mapped = model.mapped_socioeconomic_data.numpy()[:,0]
 SES_mapped = tf.matmul(model.population_Map, model.socioeconomic_data).numpy()
 SES_append = np.append(np.append(SES_initial, SES_WOA), SES_mapped)
