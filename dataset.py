@@ -132,10 +132,6 @@ class Dataset(tf.keras.Model):
         self.initialize_distances()        
         self.Map = self.initialize_map() # Community map
         
-        # The matrix used to calculate entropy, and their original values
-        #self.Pk = tf.matmul(self.socioeconomic_data , tf.ones([self.socioeconomic_data.shape[1], self.N_communities]) )
-        #self.Pk.trainable = False
-        
         # Initialize population parameters
         self.population_bounds = tf.Variable([0.8, 1.2], trainable=False, dtype=tf.float32) # Boundaries by which the population can grow or shrink of their original size
         self.tot_pop = tf.reduce_sum(self.population_size)
@@ -170,19 +166,6 @@ class Dataset(tf.keras.Model):
         '''Transforms the inputs according to the map'''
         self.Map.assign(self.normalize_map()) # Normalize the community map
         return tf.matmul(self.Map, inputs)
-    
-
-    #@tf.function
-    #def calculate_entropy(self, Plogits):
-    #    '''
-    #    takes in the (mapped) matrix Pk and creates Qk 
-    #    then calculates the entropy via sum( Pk*log(Pk/Qk) )
-    #    As lim_x->0 x*ln(x) = 0 (lHopital), we force this also.
-    #    '''    
-    #    Qlogits = tf.transpose(Plogits)
-    #    Entropy = tf.reduce_sum( Plogits * tf.math.log(Plogits / Qlogits) )
-    #    Entropy = tf.where(Plogits==0., Entropy, 0. )  # force to go to zero
-    #    return Entropy
     
     
     @tf.function
@@ -354,59 +337,62 @@ class Dataset(tf.keras.Model):
 # Load SES data
 # Source: https://opendata.cbs.nl/statline/#/CBS/nl/dataset/85163NED/table?ts=1669130926836
 # Download the file named "CSV met statistische symbolen"
-SES = pd.read_csv("Data/SES_WOA_scores_per_wijk_en_buurt_10022023_163026.csv", delimiter=';',quotechar='"').values
+SES = pd.read_csv("Data/SES_WOA_scores_per_wijk_en_buurt_06032023_210307.csv", delimiter=';',quotechar='"').values
 
 # Extract relevant columns
 wijk = SES[:,1]  # Wijk (neighborhood) name
 part_huishoudens = np.array(SES[:,2].tolist()).astype(np.float32)  # Number of private households
 SES_WOA = np.array(SES[:,3].tolist()).astype(np.float32)  # Socio-economic value of the region
-Spreiding = np.array(SES[:,4].tolist()).astype(np.float32)  # Numerical measure of inequality in a region
+#Spreiding = np.array(SES[:,4].tolist()).astype(np.float32)  # Numerical measure of inequality in a region
 # TODO: use Spreiding in the calculation
 
-# Load Nabijheid data
-# Source: https://opendata.cbs.nl/statline/#/CBS/nl/dataset/85231NED/table?ts=1669130108033
-# Download the file named "CSV met statistische symbolen"
-# Select the correct areas and filter on 'vije tijd en cultuur - afstand tot bibleotheek'
-# Note: only download neighborhoods that maps.google recognizes
-# (see https://nl.wikipedia.org/wiki/Buurten_en_wijken_in_Amsterdam for neighborhoods that correspond to wijken)
-NabijheidCSV = pd.read_csv("Data/Nabijheid_voorzieningen__buurt_2021_10022023_162519.csv", delimiter=';',quotechar='"').values
 
-# Make sure Nabijheid data is in the correct order
-Nabijheid = np.zeros(wijk.shape)
-for i in range(wijk.shape[0]):
-    try:
-        Nabijheid[i] = NabijheidCSV[np.where(NabijheidCSV==wijk[i])[0],1]
-    except:
-        raise Exception("NabijheidCSV is incomplete compared to the SES data.")
+#% load locations using geopandas.
+import geopandas as gpd
+filename = 'Data/wijkenbuurten_2022_v1.GPKG' # Source: https://www.atlasleefomgeving.nl/kaarten
+gdf = gpd.read_file(filename)
+gdf.to_crs      # data in coordinates
+gdf = gdf.explode(index_parts=True)  # convert multipolygon to polygon
+mycoordslist = [list(x.exterior.coords) for x in gdf.geometry] # make a list out of it
 
-# Download location data
-city = "Amsterdam, Netherlands"
-geolocator = Nominatim(user_agent="Dataset")
-latlon0 = [ geolocator.geocode(city).latitude , geolocator.geocode(city).longitude ]
-Locs = np.zeros([wijk.shape[0],2])
-for i in range(wijk.shape[0]):
-    loc = wijk[i]+", "+city
-    geo_loc = geolocator.geocode(loc)
-    
-    # Handle cases where geolocation fails
-    if geo_loc == None:
-        # Try again without "buurt" in the name
-        loc = wijk[i].replace("buurt","")+", "+city
-        geo_loc = geolocator.geocode(loc)
-        if geo_loc == None:
-            # Try again without the directional prefixes ("West", "Zuid", "Noord", "Oost")
-            loc = loc.replace("West","")
-            loc = loc.replace("Zuid","")
-            loc = loc.replace("Noord","")
-            loc = loc.replace("Oost","")
-            geo_loc = geolocator.geocode(loc)
+
+#% convert the polygons to center coordinates
+center_coordinates = []
+for coords in mycoordslist:
+    center_coordinates.append( np.average(coords, axis=0) ) 
+center_coordinates = np.array(center_coordinates)
+
+
+#%% add indices of each buurt in order to get the coordinates
+index=[]
+SES_WOA_nieuw=[]
+part_huishoudens_nieuw=[]
+wijk_nieuw=[]
+i=0
+for loc in wijk:
+    truefalse=False # used to check if the loc is found in the gdf file
+    j = 0
+    for buurt in gdf.buurtnaam:
+        if buurt==loc:
+            truefalse=True
+            index.append(j)
+            SES_WOA_nieuw.append(SES_WOA[i])
+            part_huishoudens_nieuw.append(part_huishoudens[i])
+            wijk_nieuw.append(wijk[i])
+            break
+        else:
+            j+=1
+            
+    if not truefalse: # check if wijk was not found
+        print("Warning:",loc,"has not been found in gdf data. Check if instance should have been found")
         
-    # Store latitude and longitude in a grid
-    latlon = [ geo_loc.latitude , geo_loc.longitude ]
-    Locs[i,0] = distance.distance( latlon0 , [geo_loc.latitude, latlon0[1]] ).m
-    Locs[i,0] = Locs[i,0] if (latlon0[0] - geo_loc.latitude > 0) else -Locs[i,0]
-    Locs[i,1] = distance.distance( latlon0 , [latlon0[0], geo_loc.longitude] ).m
-    Locs[i,1] = Locs[i,1] if (latlon0[1] - geo_loc.longitude > 0) else -Locs[i,1]
+    i+=1
+    
+# save all in arrays
+SES_WOA_nieuw = np.array(SES_WOA_nieuw)
+part_huishoudens_nieuw = np.array(part_huishoudens_nieuw)
+wijk_nieuw = np.array(wijk_nieuw)
+Locs = center_coordinates[index,:]
 
 
 #%% Define model parameters
@@ -415,7 +401,7 @@ N_communities = 5 # Number of communities
 Niterations = 50 # Number of iterations for training
 
 # Initialize model with preprocessed data
-model = Dataset(SES_WOA[:N], part_huishoudens[:N], N_communities, Locs[:N,:])
+model = Dataset(SES_WOA_nieuw[:N], part_huishoudens_nieuw[:N], N_communities, Locs[:N,:])
 
 # Define optimization algorithm and learning rate
 optimizer = tf.keras.optimizers.Adamax(learning_rate=.1)
