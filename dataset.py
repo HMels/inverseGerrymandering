@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 from geopy.geocoders import Nominatim
 from geopy import distance
 
+
 tf.config.run_functions_eagerly(True)  ### TODO should be False
 plt.close('all')
 
@@ -351,7 +352,7 @@ SES_WOA = np.array(SES[:,3].tolist()).astype(np.float32)  # Socio-economic value
 import geopandas as gpd
 filename = 'Data/wijkenbuurten_2022_v1.GPKG' # Source: https://www.atlasleefomgeving.nl/kaarten
 gdf = gpd.read_file(filename)
-gdf.to_crs      # data in coordinates
+gdf = gdf.to_crs('EPSG:4326') # to longlat
 gdf = gdf.explode(index_parts=True)  # convert multipolygon to polygon
 mycoordslist = [list(x.exterior.coords) for x in gdf.geometry] # make a list out of it
 
@@ -393,6 +394,19 @@ SES_WOA_nieuw = np.array(SES_WOA_nieuw)
 part_huishoudens_nieuw = np.array(part_huishoudens_nieuw)
 wijk_nieuw = np.array(wijk_nieuw)
 Locs = center_coordinates[index,:]
+Locs[:, [0, 1]] = Locs[:, [1, 0]]
+
+
+# Translate locations to a grid
+geolocator = Nominatim(user_agent="Dataset")
+latlon0 = [ geolocator.geocode("Amsterdam").latitude , geolocator.geocode("Amsterdam").longitude ]
+for i in range(Locs.shape[0]):
+    # Store latitude and longitude in a grid
+    Locs[i,0] = distance.distance( latlon0 , [Locs[i,0], latlon0[1]] ).m
+    Locs[i,0] = Locs[i,0] if (latlon0[0] - Locs[i,0] > 0) else -Locs[i,0]
+    Locs[i,1] = distance.distance( latlon0 , [latlon0[0], Locs[i,1]] ).m
+    Locs[i,1] = Locs[i,1] if (latlon0[1] - Locs[i,1] > 0) else -Locs[i,1]
+    
 
 
 #%% Define model parameters
@@ -445,11 +459,11 @@ for i in range(Niterations):
 print("FINISHED!\n")
 
 
-#%% Plot the population on a map of Amsterdam
+#%% Plot the population on a map of Amsterdam    
 img = plt.imread("Data/amsterdam.PNG")
 fig, ax = plt.subplots()
 ax.imshow(img, extent=[-3000, 4500, -2300, 2000])
-ax.scatter(Locs[:N, 0], Locs[:N, 1], s=part_huishoudens[:N]/100, alpha=1, label="Neighbourhoods") # Plot locations
+ax.scatter(Locs[:N, 0], Locs[:N, 1], s=part_huishoudens_nieuw[:N]/100, alpha=1, label="Neighbourhoods") # Plot locations
 ax.scatter(model.community_locs[:, 0], model.community_locs[:, 1], s=model.mapped_population_size/100, 
            alpha=1, label="Communities") # Plot community locations
 ax.scatter(0, 0, alpha=.7) # Plot origin
@@ -457,6 +471,7 @@ plt.legend()
 plt.show()
 
 
+#%%
 # Plot cost values over time
 fig1, ax1 = plt.subplots()
 ax1.plot(costs[:, 0]-costs[:, 2], label="Total costs", ls="-")
