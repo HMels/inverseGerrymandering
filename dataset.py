@@ -155,7 +155,8 @@ class Dataset(tf.keras.Model):
     
     @property
     def mapped_socioeconomic_data(self):
-        return self(self.socioeconomic_data)
+        SES = tf.matmul(self.population_Map, self.socioeconomic_data)
+        return SES/self.mapped_population_size
     
     @property
     def population_Map(self):
@@ -335,10 +336,14 @@ class Dataset(tf.keras.Model):
     
 
 #%% load data
-# Load SES data
 # Source: https://opendata.cbs.nl/statline/#/CBS/nl/dataset/85163NED/table?ts=1669130926836
 # Download the file named "CSV met statistische symbolen"
-SES = pd.read_csv("Data/SES_WOA_scores_per_wijk_en_buurt_06032023_210307.csv", delimiter=';',quotechar='"').values
+SES = pd.read_csv("Data/SES_WOA_scores_per_wijk_en_buurt_08032023_175111.csv", delimiter=';', quotechar='"', na_values='       .')
+#SES = SES.fillna(0)
+# Replace '       .' with NaN in columns 3 and 4 and delete these rows as they don't have SES data
+SES = SES.replace('       .', float('nan'))
+SES.dropna(inplace=True)
+SES = SES.values
 
 # Extract relevant columns
 wijk = SES[:,1]  # Wijk (neighborhood) name
@@ -348,8 +353,10 @@ SES_WOA = np.array(SES[:,3].tolist()).astype(np.float32)  # Socio-economic value
 # TODO: use Spreiding in the calculation
 
 
-#% load locations using geopandas.
+
+#%% load locations using geopandas.
 import geopandas as gpd
+
 filename = 'Data/wijkenbuurten_2022_v1.GPKG' # Source: https://www.atlasleefomgeving.nl/kaarten
 gdf = gpd.read_file(filename)
 gdf = gdf.to_crs('EPSG:4326') # to longlat
@@ -362,6 +369,7 @@ center_coordinates = []
 for coords in mycoordslist:
     center_coordinates.append( np.average(coords, axis=0) ) 
 center_coordinates = np.array(center_coordinates)
+center_coordinates[:, [0, 1]] = center_coordinates[:, [1, 0]]
 
 
 #%% add indices of each buurt in order to get the coordinates
@@ -370,6 +378,7 @@ SES_WOA_nieuw=[]
 part_huishoudens_nieuw=[]
 wijk_nieuw=[]
 i=0
+print("WARNING: GDF CAN ONLY FIND BUURTEN AND NOT WIJKEN OR CITIES. THEREFORE, A LOT OF DATA WILL BE MISSING:")
 for loc in wijk:
     truefalse=False # used to check if the loc is found in the gdf file
     j = 0
@@ -394,7 +403,6 @@ SES_WOA_nieuw = np.array(SES_WOA_nieuw)
 part_huishoudens_nieuw = np.array(part_huishoudens_nieuw)
 wijk_nieuw = np.array(wijk_nieuw)
 Locs = center_coordinates[index,:]
-Locs[:, [0, 1]] = Locs[:, [1, 0]]
 
 
 # Translate locations to a grid
@@ -402,20 +410,20 @@ geolocator = Nominatim(user_agent="Dataset")
 latlon0 = [ geolocator.geocode("Amsterdam").latitude , geolocator.geocode("Amsterdam").longitude ]
 for i in range(Locs.shape[0]):
     # Store latitude and longitude in a grid
-    Locs[i,0] = distance.distance( latlon0 , [Locs[i,0], latlon0[1]] ).m
-    Locs[i,0] = Locs[i,0] if (latlon0[0] - Locs[i,0] > 0) else -Locs[i,0]
-    Locs[i,1] = distance.distance( latlon0 , [latlon0[0], Locs[i,1]] ).m
-    Locs[i,1] = Locs[i,1] if (latlon0[1] - Locs[i,1] > 0) else -Locs[i,1]
+    loc = np.zeros(2,dtype=np.float32)
+    loc[0] = distance.distance( latlon0 , [Locs[i,0], latlon0[1]] ).m
+    loc[0] = loc[0] if (latlon0[0] < Locs[i,0]) else -loc[0]
+    loc[1] = distance.distance( latlon0 , [latlon0[0], Locs[i,1]] ).m
+    loc[1] = loc[1] if (latlon0[1] < Locs[i,1]) else -loc[1]
+    Locs[i,:] = loc
     
 
-
 #%% Define model parameters
-N = 9  # Number of locations
 N_communities = 5 # Number of communities
 Niterations = 50 # Number of iterations for training
 
 # Initialize model with preprocessed data
-model = Dataset(SES_WOA_nieuw[:N], part_huishoudens_nieuw[:N], N_communities, Locs[:N,:])
+model = Dataset(SES_WOA_nieuw, part_huishoudens_nieuw, N_communities, Locs)
 
 # Define optimization algorithm and learning rate
 optimizer = tf.keras.optimizers.Adamax(learning_rate=.1)
@@ -463,12 +471,11 @@ print("FINISHED!\n")
 img = plt.imread("Data/amsterdam.PNG")
 fig, ax = plt.subplots()
 ax.imshow(img, extent=[-3000, 4500, -2300, 2000])
-ax.scatter(Locs[:N, 0], Locs[:N, 1], s=part_huishoudens_nieuw[:N]/100, alpha=1, label="Neighbourhoods") # Plot locations
+ax.scatter(Locs[:, 0], Locs[:, 1], s=part_huishoudens_nieuw/100, alpha=1, label="Neighbourhoods") # Plot locations
 ax.scatter(model.community_locs[:, 0], model.community_locs[:, 1], s=model.mapped_population_size/100, 
            alpha=1, label="Communities") # Plot community locations
 ax.scatter(0, 0, alpha=.7) # Plot origin
-plt.legend()
-plt.show()
+ax.legend()
 
 
 #%%
@@ -485,18 +492,15 @@ plt.legend()
 
 
 # histogram of the economic data
-SES_initial = tf.matmul(model.population_size[:,0] * model.initial_Map, SES_WOA[:N,None] ).numpy()[:,0]  # the SES values of the initial Map
-#SES_mapped = model.mapped_socioeconomic_data.numpy()[:,0]
-SES_mapped = tf.matmul(model.population_Map, model.socioeconomic_data).numpy()
-SES_append = np.append(np.append(SES_initial, SES_WOA), SES_mapped)
+SES_mapped = model.mapped_socioeconomic_data.numpy()[:,0]
+SES_append = np.append(SES_WOA_nieuw, SES_mapped)
 
 fig2, ax2 = plt.subplots()
-num_bins = SES_WOA.shape[0]*4
+num_bins = SES_WOA.shape[0]
 bin_edges = np.linspace(np.min(SES_append), np.max(SES_append), num_bins+1)
-#n, bins, patches = ax2.hist(SES_WOA, bins=bin_edges, alpha=0.3, label='SES_WOA', density=True)
-n, bins, patches = ax2.hist(SES_initial.flatten(), bins=bin_edges, color = 'r',edgecolor = "black",
+n, bins, patches = ax2.hist(SES_WOA_nieuw, bins=bin_edges, color = 'r',edgecolor = "black",
                             alpha=0.3, label='Initial SES', density=True)
-n, bins, patches = ax2.hist(SES_mapped.flatten(), bins=bin_edges-bin_edges[0]/2, color = 'g',
+n, bins, patches = ax2.hist(SES_mapped, bins=bin_edges-bin_edges[0]/2, color = 'g',
                             alpha=0.5, label='Mapped SES', density=True)
 ax2.legend(loc='upper right')
 ax2.set_xlabel('SES')
