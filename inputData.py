@@ -52,9 +52,9 @@ class InputData:
 
         # Extract relevant variables and store as class variables
         self.neighbourhoods = data[:,1]  # neighbourhood names
-        self.Socioeconomic_data = tf.Variable(np.array(data[:,3].tolist()).astype(np.float32)[:, None],
+        self.Socioeconomic_data = tf.Variable(np.array(data[:,3].tolist()).astype(np.float32)[:],
                                               trainable=False, dtype=tf.float32) # Socio-economic value of the region
-        self.Population = tf.Variable(np.array(data[:,2].tolist()).astype(np.float32)[:, None],
+        self.Population = tf.Variable(np.array(data[:,2].tolist()).astype(np.float32)[:],
                                            trainable=False, dtype=tf.float32) # Number of households per neighbourhood
         self.Locations = None      # locations yet to be 
         self.N = self.Socioeconomic_data.shape[0]
@@ -83,9 +83,9 @@ class InputData:
 
         # Extract relevant variables and store as class variables
         self.neighbourhoods = data[:,1]  # neighbourhood names
-        self.Socioeconomic_data = tf.Variable(np.array(data[:,3].tolist()).astype(np.float32)[:, None],
+        self.Socioeconomic_data = tf.Variable(np.array(data[:,3].tolist()).astype(np.float32)[:],
                                               trainable=False, dtype=tf.float32) # Socio-economic value of the region
-        self.Population = tf.Variable(np.array(data[:,2].tolist()).astype(np.float32)[:, None],
+        self.Population = tf.Variable(np.array(data[:,2].tolist()).astype(np.float32)[:],
                                            trainable=False, dtype=tf.float32) # Number of households per neighbourhood
         self.Locations = None      # locations yet to be 
         self.N = self.Socioeconomic_data.shape[0]

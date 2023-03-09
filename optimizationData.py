@@ -35,14 +35,6 @@ class OptimizationData:
         optimizer : TensorFlow optimizer, optional
             The TensorFlow optimizer to use in the optimization process. The default is tf.keras.optimizers.Adamax(learning_rate=.1).
 
-        Returns
-        -------
-        None.
-
-        Raises
-        ------
-        None.
-
         Attributes
         ----------
         N_iterations : int

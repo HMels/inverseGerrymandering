@@ -92,8 +92,8 @@ fig1, ax1 = model.OptimizationData.plotCosts()
 fig2, ax2 = plt.subplots()
 num_bins = model.InputData.Socioeconomic_data.shape[0]
 SES_append = np.append(model.InputData.Socioeconomic_data, model.Communities.Socioeconomic_data)
-initial_population_map = tf.round(model.InputData.Population[:,0] * model.initial_Map)
-SES_initial = tf.matmul(initial_population_map, model.InputData.Socioeconomic_data)[:,0] / tf.reduce_sum(initial_population_map, axis=1)
+initial_population_map = tf.round(model.InputData.Population * model.initial_Map)
+SES_initial = tf.squeeze(tf.matmul(initial_population_map, tf.expand_dims(model.InputData.Socioeconomic_data,1))) / tf.reduce_sum(initial_population_map, axis=1)
 bin_edges = np.linspace(np.min(SES_append), np.max(SES_append), num_bins+1)
 
 n, bins, patches = ax2.hist(model.InputData.Socioeconomic_data.numpy(), bins=bin_edges, color = 'r',edgecolor = "black",

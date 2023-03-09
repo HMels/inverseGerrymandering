@@ -154,12 +154,11 @@ class Model(InputData, tf.keras.Model):
     
     @property
     def mapped_Socioeconomic_data(self):
-        SES = self(self.InputData.Socioeconomic_population)
-        return SES/self.mapped_Population
+        return self(self.InputData.Socioeconomic_population)/self.mapped_Population
     
     @property
     def population_Map(self):
-        return tf.round(self.InputData.Population[:,0] * self.normalize_map())
+        return tf.round(self.InputData.Population * self.normalize_map())
     
     
     @tf.function
@@ -172,7 +171,7 @@ class Model(InputData, tf.keras.Model):
     def call(self, inputs):
         '''Transforms the inputs according to the map'''
         self.Map.assign(self.normalize_map()) # Normalize the community map
-        return tf.matmul(self.Map, inputs)
+        return tf.squeeze(tf.matmul(self.Map, tf.expand_dims(inputs, axis=1)))
     
     
     @tf.function
@@ -243,7 +242,7 @@ class Model(InputData, tf.keras.Model):
         # Normalizes the weights such that relatively all costs start at 1. 
         # Then it multplies the normalized weights by the assigned weights
         self.OptimizationData.weight_SESvariance = self.OptimizationData.weight_SESvariance / ( 
-            tf.math.reduce_variance(tf.matmul(self.population_Map, self.InputData.Socioeconomic_data) )
+            tf.math.reduce_variance( self(self.InputData.Socioeconomic_population) )
             )
         self.OptimizationData.weight_distance = self.OptimizationData.weight_distance / ( 
             tf.reduce_sum(tf.multiply(self.population_Map, self.distances) / self.tot_pop / self.max_distance)
@@ -260,10 +259,7 @@ class Model(InputData, tf.keras.Model):
         effect becomes strongly less as distance increases.
         
         Returns:
-            A TensorFlow variable with shape (Communities.N, InputData.N), initialized with the desired values and set as trainable.
-        
-        Raises:
-            None
+            A TensorFlow variable with shape (Communities.N, InputData.N), initialized with the desired values and set as trainable.            
         
         Attributes:
             self.distances (TensorFlow tensor):
@@ -339,6 +335,6 @@ class Model(InputData, tf.keras.Model):
           "\nThe Map is:\n",tf.round( self.normalize_map() * 100 , 1 ).numpy(),
           "\n\nwhich counts up to:\n",tf.reduce_sum(tf.round( self.normalize_map() * 100 , 1 ).numpy(), axis=0),
           "\n\nThe Population Map is:\n",tf.round( self.population_Map.numpy()),
-          "\n\nSocioeconomic_data:\n", self.mapped_Socioeconomic_data.numpy(),
-          "\n\nPopulation Size:\n", tf.round( self.mapped_Population ).numpy()
+          "\n\nSocioeconomic_data:\n", tf.expand_dims(self.mapped_Socioeconomic_data, axis=1).numpy(),
+          "\n\nPopulation Size:\n", tf.round( tf.expand_dims(self.mapped_Population, axis=1) ).numpy()
           ,"\n\n")
