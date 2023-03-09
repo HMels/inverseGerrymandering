@@ -36,6 +36,18 @@ class Communities:
         self.Population = Population if Population is not None else None
         self.Socioeconomic_data = Socioeconomic_data if Socioeconomic_data is not None else None
         
+        
+    @property
+    def Socioeconomic_population(self):
+        '''
+        Returns
+        -------
+        tf.float32
+            The socioeconomic data multiplied by the population to get the actual socioeconomic value.
+
+        '''
+        return self.Socioeconomic_data * self.Population
+        
     
     @tf.function
     def initialize_community_Locations(self, N_communities, InputData_Locations):

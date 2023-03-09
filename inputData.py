@@ -60,6 +60,18 @@ class InputData:
         self.N = self.Socioeconomic_data.shape[0]
         
         
+    @property
+    def Socioeconomic_population(self):
+        '''
+        Returns
+        -------
+        tf.float32
+            The socioeconomic data multiplied by the population to get the actual socioeconomic value.
+
+        '''
+        return self.Socioeconomic_data * self.Population
+        
+        
     def reload_path(self, path):
         # Load data from CSV file using pandas
         data = pd.read_csv(path, delimiter=';', quotechar='"', na_values='       .')

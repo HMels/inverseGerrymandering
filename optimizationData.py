@@ -151,7 +151,7 @@ class OptimizationData:
         ax.plot(self.costs[:, 3], label="L1 population bounds", ls="--")
         ax.plot(self.costs[:, 4], label="L1 distance", ls="--")
         ax.plot(self.costs[:, 2], label="L2 population positive", ls=":")
-        ax.set_xlim(0, self.N_iterations)
+        ax.set_xlim(0, self.N_iterations-1)
         ax.set_ylim(0, np.max(self.costs[:, 0]-self.costs[:, 2])*1.2)
         plt.legend()
         return fig, ax

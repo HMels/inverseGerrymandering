@@ -97,11 +97,11 @@ SES_initial = tf.matmul(initial_population_map, model.InputData.Socioeconomic_da
 bin_edges = np.linspace(np.min(SES_append), np.max(SES_append), num_bins+1)
 
 n, bins, patches = ax2.hist(model.InputData.Socioeconomic_data.numpy(), bins=bin_edges, color = 'r',edgecolor = "black",
-                            alpha=0.3, label='Initial SES neighbourhoods', density=True)
+                            alpha=0.3, label='Initial neighbourhoods', density=True)
 n, bins, patches = ax2.hist(SES_initial, bins=bin_edges, color = 'orange',edgecolor = "grey",
-                                                        alpha=0.4, label='Initial SES communities', density=True)
+                                                        alpha=0.4, label='Initial communities', density=True)
 n, bins, patches = ax2.hist(model.Communities.Socioeconomic_data.numpy(), bins=bin_edges-bin_edges[0]/2, color = 'g',
-                            alpha=0.5, label='Mapped SES', density=True)
+                            alpha=0.5, label='Mapped', density=True)
 
 ax2.legend(loc='upper right')
 ax2.set_xlabel('SES')

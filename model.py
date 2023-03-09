@@ -136,7 +136,7 @@ class Model(InputData, tf.keras.Model):
         self.Map = self.initialize_map() # Community map
         
         # initialise weights
-        self.OptimizationData = OptimizationData(weights=[10,1,1,1], N_iterations=N_iterations,
+        self.OptimizationData = OptimizationData(weights=[10,1,1,3], N_iterations=N_iterations,
                                                  LN=[1,2,1,1], optimizer=optimizer)
         
         # Initialize population parameters
@@ -154,7 +154,7 @@ class Model(InputData, tf.keras.Model):
     
     @property
     def mapped_Socioeconomic_data(self):
-        SES = tf.matmul(self.population_Map, self.InputData.Socioeconomic_data)
+        SES = self(self.InputData.Socioeconomic_population)
         return SES/self.mapped_Population
     
     @property
@@ -207,7 +207,7 @@ class Model(InputData, tf.keras.Model):
         """
 
         # Calculate variance of socioeconomic data mapped to population map
-        SES_variance = tf.math.reduce_variance(tf.matmul(self.population_Map, self.InputData.Socioeconomic_data) ) * self.OptimizationData.weight_SESvariance
+        SES_variance = tf.math.reduce_variance( self(self.InputData.Socioeconomic_population) ) * self.OptimizationData.weight_SESvariance
     
         # Regularization term to ensure population map is positive
         cost_popPositive = (tf.reduce_sum(tf.abs(tf.where(self.Map < 0., self.Map, 0.))) * self.OptimizationData.weight_popPositive*100)
