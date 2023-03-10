@@ -147,7 +147,6 @@ class Model(InputData, tf.keras.Model):
         self.initialize_weights()        
         
         
-    
     @property
     def mapped_Population(self):
         return self(self.InputData.Population)

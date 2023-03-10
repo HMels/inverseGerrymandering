@@ -16,7 +16,7 @@ from inputData import InputData
 from communities import Communities
 from optimizationData import OptimizationData
 
-class Model_geo(InputData, tf.keras.Model):
+class ModelGeo(InputData, tf.keras.Model):
     def __init__(self, InputData, N_communities, N_iterations, optimizer):
         """
         Initializes the Dataset object with given socioeconomic data, population size, number of communities, and neighbourhood locations.
@@ -82,7 +82,7 @@ class Model_geo(InputData, tf.keras.Model):
         self.initialize_distances()
         
         # we label the data with a number that corresponds to the closest community
-        self.labels = tf.Variable(tf.argmin(self.distances, axis=0).numpy() , trainable=True, dtype=tf.int32) 
+        self.labels = tf.Variable(tf.argmin(self.distances, axis=0).numpy() % self.Communities.N, trainable=True, dtype=tf.int32)
         
         # initialise weights
         self.OptimizationData = OptimizationData(weights=[10,1,1,1], N_iterations=N_iterations,
@@ -93,15 +93,80 @@ class Model_geo(InputData, tf.keras.Model):
         self.avg_pop = self.tot_pop / self.Communities.N # Average population size
         self.OptimizationData.initialize_popBoundaries(self.avg_pop, population_bounds=[0.8, 1.2])
         
-        #self.initialize_weights()       
+        self.initialize_weights()   
+    '''    
+    @property
+    def labels(self):
+        # define labels as a modulus
+        return tf.math.mod(self.labels_var, self.Communities.N)
+    '''
     
+    @property
+    def mapped_Population(self):
+        return self(self.InputData.Population)
+    
+    @property
+    def mapped_Socioeconomic_data(self):
+        return self(self.InputData.Socioeconomic_population)/self.mapped_Population
+    
+    @property
+    def population_Map(self):
+        return tf.round(self.Map(self.InputData.Population))
     
     
     @tf.function
-    def call(self, inputs):
-        '''Transforms the inputs according to the label'''
+    def applyMapCommunities(self):
+        self.Communities.Population = self.mapped_Population
+        self.Communities.Socioeconomic_data = self.mapped_Socioeconomic_data
+        
+        
+    @tf.function
+    def Map(self, inputs):
+        '''
+        Creates a Map of the inputs according to the labels
+
+        Parameters
+        ----------
+        inputs : (InputData.N) or (InputData.N x 2) Tensor
+            The inputs that we want to be transformed into a Map Tensor.
+
+        Raises
+        ------
+        Exception
+            If the length of inputs and labels are not equal.
+
+        Returns
+        -------
+        (Communities.N x InputData.N) or (Communities.N x InputData.N x 2) Tensor
+            The Mapped output
+        '''
+        if tf.squeeze(inputs).shape[0]!=self.labels.shape[0]: 
+            raise Exception("inputs should have the same lenght as self.labels!")
         indices = tf.transpose(tf.stack([self.labels, tf.range(self.InputData.N)]))
-        return tf.scatter_nd(indices, tf.squeeze(inputs), shape = (self.Communities.N, self.InputData.N))
+        if len(tf.squeeze(inputs).shape)==2:
+            return tf.scatter_nd(indices, tf.squeeze(inputs), shape = (self.Communities.N, self.InputData.N, 2))
+        else:
+            return tf.scatter_nd(indices, tf.squeeze(inputs), shape = (self.Communities.N, self.InputData.N))
+        
+    
+    @tf.function
+    def call(self, inputs):
+        '''
+        Transforms the inputs according to the label
+
+        Parameters
+        ----------
+        inputs : (InputData.N) or (InputData.N x 2) Tensor
+            The inputs that we want to be transformed.
+
+        Returns
+        -------
+        (Communities.N) or (Communities.N x 2) Tensor
+            The transformed values of the Tensor.
+
+        '''
+        #self.labels.assign(tf.math.mod(self.labels, self.Communities.N))
+        return tf.reduce_sum(self.Map(inputs), axis=1)
         
     
     
@@ -134,14 +199,12 @@ class Model_geo(InputData, tf.keras.Model):
         
         Returns:
         Tensor: A TensorFlow tensor representing the sum of all partial costs.
-        """
-        
-        ##TODO make everything work for the new programming standard!
+        """        
         # Calculate variance of socioeconomic data mapped to population map
-        SES_variance = tf.math.reduce_variance( tf.reduce_sum(self(self.InputData.Socioeconomic_population)) ) * self.OptimizationData.weight_SESvariance
+        SES_variance = tf.math.reduce_variance( self(self.InputData.Socioeconomic_population) ) * self.OptimizationData.weight_SESvariance
     
         # Regularization term to ensure population map is positive
-        cost_popPositive = (tf.reduce_sum(tf.abs(tf.where(self.Map < 0., self.Map, 0.))) * self.OptimizationData.weight_popPositive*100)
+        cost_popPositive = (tf.reduce_sum(tf.abs(tf.where(self.labels < 0, 1., 0.))) * self.OptimizationData.weight_popPositive*100)
     
         # Regularization term for population limits
         cost_popBounds = tf.reduce_sum(tf.where(self.mapped_Population > self.OptimizationData.popBoundHigh,
@@ -174,7 +237,7 @@ class Model_geo(InputData, tf.keras.Model):
         # Normalizes the weights such that relatively all costs start at 1. 
         # Then it multplies the normalized weights by the assigned weights
         self.OptimizationData.weight_SESvariance = self.OptimizationData.weight_SESvariance / ( 
-            tf.math.reduce_variance(tf.matmul(self.population_Map, self.InputData.Socioeconomic_data) )
+            tf.math.reduce_variance( self(self.InputData.Socioeconomic_population) )
             )
         self.OptimizationData.weight_distance = self.OptimizationData.weight_distance / ( 
             tf.reduce_sum(tf.multiply(self.population_Map, self.distances) / self.tot_pop / self.max_distance)
@@ -217,9 +280,8 @@ class Model_geo(InputData, tf.keras.Model):
     @tf.function
     def print_summary(self):
         print(
-          "\nThe Map is:\n",tf.round( self.normalize_map() * 100 , 1 ).numpy(),
-          "\n\nwhich counts up to:\n",tf.reduce_sum(tf.round( self.normalize_map() * 100 , 1 ).numpy(), axis=0),
+          "\nThe Labels are:\n",self.labels.numpy(),
           "\n\nThe Population Map is:\n",tf.round( self.population_Map.numpy()),
-          "\n\nSocioeconomic_data:\n", self.mapped_Socioeconomic_data.numpy(),
-          "\n\nPopulation Size:\n", tf.round( self.mapped_Population ).numpy()
+          "\n\nSocioeconomic_data:\n", tf.expand_dims(self.mapped_Socioeconomic_data, axis=1).numpy(),
+          "\n\nPopulation Size:\n", tf.round( tf.expand_dims(self.mapped_Population, axis=1) ).numpy()
           ,"\n\n")

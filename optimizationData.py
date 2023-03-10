@@ -145,6 +145,8 @@ class OptimizationData:
         ax.plot(self.costs[:, 2], label="L2 population positive", ls=":")
         ax.set_xlim(0, self.N_iterations-1)
         ax.set_ylim(0, np.max(self.costs[:, 0]-self.costs[:, 2])*1.2)
+        ax.set_xlabel("Iterations")
+        ax.set_ylabel("Costs")
         plt.legend()
         return fig, ax
     

@@ -13,11 +13,12 @@ from geopy.geocoders import Nominatim
 # import modules from file
 from model import Model
 from inputData import InputData
+from modelGeo import ModelGeo
 
 
 
 #%% Load data
-if True: # loading the geoData takes too long so this way I only have to do it once
+if False: # loading the geoData takes too long so this way I only have to do it once
     # Source: https://opendata.cbs.nl/statline/#/CBS/nl/dataset/85163NED/table?ts=1669130926836
     # Download the file named "CSV met statistische symbolen"
     inputData = InputData("Data/SES_WOA_scores_per_wijk_en_buurt_08032023_175111.csv")
@@ -44,7 +45,8 @@ N_iterations = 50 # Number of iterations for training
 
 # Define optimization algorithm and learning rate
 optimizer = tf.keras.optimizers.Adamax(learning_rate=.25)
-model = Model(inputData, N_communities, N_iterations, optimizer)
+#model = Model(inputData, N_communities, N_iterations, optimizer)
+model = ModelGeo(inputData, N_communities, N_iterations, optimizer)
 '''
 # Adagrad doesn't converge below half of the SES value
 # Nadam works but has shocky convergence
