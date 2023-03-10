@@ -16,7 +16,7 @@ from modelGeo import ModelGeo
 
 
 #%% Load data
-if False: # loading the geoData takes too long so this way I only have to do it once
+if True: # loading the geoData takes too long so this way I only have to do it once
     # Source: https://opendata.cbs.nl/statline/#/CBS/nl/dataset/85163NED/table?ts=1669130926836
     # Download the file named "CSV met statistische symbolen"
     inputData = InputData("Data/SES_WOA_scores_per_wijk_en_buurt_08032023_175111.csv")

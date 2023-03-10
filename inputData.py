@@ -191,10 +191,10 @@ class InputData:
             MappedCoordinates = np.zeros((len(polygon.exterior[0].coords), 2), dtype=np.float32)
             for i, coord in enumerate(polygon.exterior[0].coords):
                 loc = np.zeros(2, dtype=np.float32)
-                loc[0] = distance.distance(latlon0, [coord[0], latlon0[1]]).m
-                loc[0] = loc[0] if (latlon0[0] < coord[0]) else -loc[0]
-                loc[1] = distance.distance(latlon0, [latlon0[0], coord[1]]).m
-                loc[1] = loc[1] if (latlon0[1] < coord[1]) else -loc[1]
+                loc[0] = distance.distance(latlon0, [coord[1], latlon0[1]]).m
+                loc[0] = loc[0] if (latlon0[0] < coord[1]) else -loc[0]
+                loc[1] = distance.distance(latlon0, [latlon0[0], coord[0]]).m
+                loc[1] = loc[1] if (latlon0[1] < coord[0]) else -loc[1]
                 MappedCoordinates[i, :] = loc
             MappedPolygon = Polygon(MappedCoordinates)
             MappedPolygons.append(MappedPolygon)
@@ -246,52 +246,43 @@ class InputData:
         i=0
         print("WARNING: GDF CAN ONLY FIND BUURTEN AND NOT WIJKEN OR CITIES. THEREFORE, A LOT OF DATA WILL BE MISSING:")
         if loadGeometry:
+            truefalse=False # used to check if the loc is found in the gdf file
             for loc in self.neighbourhoods:
-                truefalse=False # used to check if the loc is found in the gdf file
-                j = 0
                 for buurt in range(self.gdf.buurtnaam.shape[0]):
                     try:
                         if self.gdf.buurtnaam[buurt][0]==loc:
-                            truefalse=True
-                            index.append(j)
-                            Socioeconomic_data.append(self.Socioeconomic_data[i])
-                            Population.append(self.Population[i])
-                            neighbourhoods.append(self.neighbourhoods[i])
                             Geometry.append(self.gdf.geometry[buurt])
                             break
-                        else:
-                            j+=1
                     except:
                         break
+
+            if not truefalse: # check if wijk was not found
+                print("1. Warning:",loc,"has not been found in gdf data. Check if instance should have been found")
     
-                if not truefalse: # check if wijk was not found
-                    print("Warning:",loc,"has not been found in gdf data. Check if instance should have been found")
-    
-                i+=1
             self.Geometry = Geometry
         
-        else: # a faster mode than loading all polygons
-            for loc in self.neighbourhoods:
-                truefalse=False # used to check if the loc is found in the gdf file
-                j = 0
-                for buurt in self.gdf.buurtnaam:
-                    try:
-                        if buurt==loc:
-                            truefalse=True
-                            index.append(j)
-                            Socioeconomic_data.append(self.Socioeconomic_data[i])
-                            Population.append(self.Population[i])
-                            neighbourhoods.append(self.neighbourhoods[i])
-                            break
-                        else:
-                            j+=1
-                    except:
+        for loc in self.neighbourhoods:
+            truefalse=False # used to check if the loc is found in the gdf file
+            j = 0
+            for buurt in self.gdf.buurtnaam:
+                try:
+                    if buurt==loc:
+                        truefalse=True
+                        index.append(j)
+                        Socioeconomic_data.append(self.Socioeconomic_data[i])
+                        Population.append(self.Population[i])
+                        neighbourhoods.append(self.neighbourhoods[i])
                         break
-    
-                if not truefalse: # check if wijk was not found
-                    print("Warning:",loc,"has not been found in gdf data. Check if instance should have been found")
+                    else:
+                        j+=1
+                except:
+                    break
+
+            if not truefalse: # check if wijk was not found
+                print("2. Warning:",loc,"has not been found in gdf data. Check if instance should have been found")
     
                 i+=1
+                
             
         # save all in arrays
         self.Socioeconomic_data = tf.Variable(Socioeconomic_data, trainable=False, dtype=tf.float32)
