@@ -205,35 +205,34 @@ class Model(InputData, tf.keras.Model):
         """
 
         # Calculate variance of socioeconomic data mapped to population map
-        SES_variance = tf.math.reduce_variance( self(self.InputData.Socioeconomic_population) ) * self.OptimizationData.weight_SESvariance
+        SES_variance = tf.math.reduce_variance( self(self.InputData.Socioeconomic_population) )
     
         # Regularization term to ensure population map is positive
-        cost_popPositive = (tf.reduce_sum(tf.abs(tf.where(self.Map < 0., self.Map, 0.))) * self.OptimizationData.weight_popPositive*100)
+        cost_popPositive = (tf.reduce_sum(tf.abs(tf.where(self.Map < 0., self.Map, 0.))) *100)
     
         # Regularization term for population limits
         cost_popBounds = tf.reduce_sum(tf.where(self.mapped_Population > self.OptimizationData.popBoundHigh,
                                               tf.abs(self.mapped_Population-self.OptimizationData.popBoundHigh), 0) +
                                      tf.where(self.mapped_Population < self.OptimizationData.popBoundLow, 
-                                              tf.abs(self.mapped_Population-self.OptimizationData.popBoundLow), 0)) * ( 
-                                         self.OptimizationData.weight_popBounds / self.tot_pop 
-                                         )
+                                              tf.abs(self.mapped_Population-self.OptimizationData.popBoundLow), 0))  / self.tot_pop
     
         # Add regularization term based on distances
         pop_distances = tf.multiply(self.population_Map, self.distances)
-        cost_distance = tf.reduce_sum(pop_distances / self.tot_pop / self.max_distance)*self.OptimizationData.weight_distance
+        cost_distance = tf.reduce_sum(pop_distances / self.tot_pop / self.max_distance)
 
-        # Record the partial costs for inspection and return the sum of all partial costs
+        # Input costs into the OptimizationData model and save them
         self.OptimizationData.saveCosts(SES_variance, cost_popPositive, cost_popBounds, cost_distance)
-        return self.OptimizationData.sumCosts
+        return self.OptimizationData.totalCost  
     
     
     @tf.function
     def train_step(self):
         with tf.GradientTape() as tape:
             loss_value = self.cost_fn()
+            self.OptimizationData.storeCosts() # store the costs to be used later in a plot
         grads = tape.gradient(loss_value, self.trainable_variables)
         self.OptimizationData.optimizer.apply_gradients(zip(grads, self.trainable_variables))
-        return loss_value  
+        return loss_value
             
     
     @tf.function

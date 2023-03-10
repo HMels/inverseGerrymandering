@@ -11,12 +11,12 @@ import matplotlib.pyplot as plt
 from geopy.geocoders import Nominatim
 
 # import modules from file
-from model import Model
 from inputData import InputData
+from modelGeo import ModelGeo
 
 
 #%% Load data
-if True: # loading the geoData takes too long so this way I only have to do it once
+if False: # loading the geoData takes too long so this way I only have to do it once
     # Source: https://opendata.cbs.nl/statline/#/CBS/nl/dataset/85163NED/table?ts=1669130926836
     # Download the file named "CSV met statistische symbolen"
     inputData = InputData("Data/SES_WOA_scores_per_wijk_en_buurt_08032023_175111.csv")
@@ -24,17 +24,18 @@ if True: # loading the geoData takes too long so this way I only have to do it o
     
     # Source: https://www.atlasleefomgeving.nl/kaarten
     inputData.load_geo_data('Data/wijkenbuurten_2022_v1.GPKG')
-    inputData.buurt_filter()
+    inputData.buurt_filter(loadGeometry=True)
     
 else: 
     inputData.reload_path("Data/SES_WOA_scores_per_wijk_en_buurt_08032023_175111.csv")
-    inputData.buurt_filter()
+    inputData.buurt_filter(loadGeometry=True)
 
 
 #%% Translate locations to a grid
 geolocator = Nominatim(user_agent="Dataset")
 latlon0 = [ geolocator.geocode("Amsterdam").latitude , geolocator.geocode("Amsterdam").longitude ]
 inputData.map2grid(latlon0)
+inputData.polygon2grid(latlon0)
 
 
 #%% Define model parameters
@@ -43,7 +44,7 @@ N_iterations = 50 # Number of iterations for training
 
 # Define optimization algorithm and learning rate
 optimizer = tf.keras.optimizers.Adamax(learning_rate=.25)
-model = Model(inputData, N_communities, N_iterations, optimizer)
+model = ModelGeo(inputData, N_communities, N_iterations, optimizer)
 '''
 # Adagrad doesn't converge below half of the SES value
 # Nadam works but has shocky convergence
@@ -61,27 +62,23 @@ model.print_summary()
 
 #%% Train the model for Niterations iterations
 print("OPTIMISING...")
-for i in range(model.OptimizationData.N_iterations):
-    loss_value = model.train_step() # Take one optimization step
-    if i % 10 == 0:
-        # Print current loss and individual cost components
-        print("Step: {}, Loss: {}".format(i, loss_value.numpy()))
-        model.OptimizationData.printCosts()
-
+model.train()
 model.applyMapCommunities()
 print("FINISHED!\n")
 
 
-#%% Plot the population on a map of Amsterdam    
+#%% Plot the population on a map of Amsterdam  
+cdict = {1: 'red', 2: 'blue', 3: 'green', 4: 'yellow', 0: 'c'}
+colour = []
+for label in model.labels.numpy():
+    colour.append(cdict[label])
+  
 img = plt.imread("Data/amsterdam.PNG")
 fig, ax = plt.subplots()
-#ax.imshow(img, extent=[-3000, 4500, -2300, 2000])
 ax.imshow(img, extent=[-3000, 4000, -2300, 3000])
-ax.scatter(model.InputData.Locations[:, 0], model.InputData.Locations[:, 1], s=model.InputData.Population/100, alpha=1, label="Neighbourhoods") # Plot locations
-ax.scatter(model.Communities.Locations[:, 0], model.Communities.Locations[:, 1], s=model.Communities.Population/100, 
-           alpha=1, label="Communities") # Plot community locations
+ax.scatter(model.InputData.Locations[:, 0], model.InputData.Locations[:, 1], s=model.InputData.Population/100, 
+           c = colour, alpha=1) # Plot locations
 ax.scatter(0, 0, alpha=.7) # Plot origin
-ax.legend()
 
 
 # Pltot 
@@ -109,3 +106,26 @@ plt.show()
 
 print("OPTIMISED VALUES: ")
 model.print_summary()
+
+
+
+#%% Polygon
+from matplotlib.patches import Polygon as PolygonPatch
+
+cdict = {1: 'red', 2: 'blue', 3: 'green', 4: 'yellow', 0: 'c'}
+colour = []
+for label in model.labels.numpy():
+    colour.append(cdict[label])
+    
+img = plt.imread("Data/amsterdam.PNG")
+fig, ax = plt.subplots()
+ax.imshow(img, extent=[-3000, 4000, -2300, 3000])
+    
+for i, polygon in enumerate(model.InputData.GeometryGrid):
+    print(type(polygon))
+    print(polygon.exterior.coords)
+    #patch = PolygonPatch(polygon, facecolor=colour[i], alpha=0.5)
+    #ax.add_patch(patch)
+    patch = PolygonPatch(polygon, facecolor=colour[i], alpha=0.5)
+    patch.set_xy(np.array(polygon.exterior.xy).T)
+    ax.add_patch(patch)

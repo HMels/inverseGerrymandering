@@ -16,6 +16,7 @@ import geopandas as gpd
 import numpy as np
 from geopy import distance
 import tensorflow as tf
+from shapely.geometry import Polygon
 
 
 class InputData:
@@ -82,7 +83,7 @@ class InputData:
         data = data.values
 
         # Extract relevant variables and store as class variables
-        self.neighbourhoods = data[:,1]  # neighbourhood names
+        self.neighbourhoods = np.array(data[:,1])  # neighbourhood names
         self.Socioeconomic_data = tf.Variable(np.array(data[:,3].tolist()).astype(np.float32)[:],
                                               trainable=False, dtype=tf.float32) # Socio-economic value of the region
         self.Population = tf.Variable(np.array(data[:,2].tolist()).astype(np.float32)[:],
@@ -139,7 +140,7 @@ class InputData:
 
     def map2grid(self, latlon0):
         """
-        Maps the coordinates in `neighbourhood_coords` to a grid that follows the reference coordinate `latlon0`.
+        Maps the coordinates in `Coordinates` to a grid that follows the reference coordinate `latlon0`.
         
         Args:
             latlon0 (tuple): A tuple containing the reference coordinate in the form (latitude, longitude).
@@ -148,24 +149,62 @@ class InputData:
             Locations (Tensor): TensorFlow Tensor of shape (n,2) containing the mapped coordinates.
         
         Notes:
-            This function calculates the distance in meters of each coordinate in `neighbourhood_coords` to the reference
+            This function calculates the distance in meters of each coordinate in `Coordinates` to the reference
             coordinate `latlon0`. It then maps the coordinates to a grid based on their relative position to the reference
             coordinate, with the reference coordinate as the origin of the grid. The resulting `Locations` array is returned.
         """        
         # Loop through all coordinates and store their latitude and longitude in a grid
-        Locations = np.zeros(self.neighbourhood_coords.shape, dtype=np.float32)
-        for i in range(self.neighbourhood_coords.shape[0]):
+        Locations = np.zeros(self.Coordinates.shape, dtype=np.float32)
+        for i in range(self.Coordinates.shape[0]):
             loc = np.zeros(2, dtype=np.float32)
-            loc[0] = distance.distance(latlon0, [self.neighbourhood_coords[i, 0], latlon0[1]]).m
-            loc[0] = loc[0] if (latlon0[0] < self.neighbourhood_coords[i, 0]) else -loc[0]
-            loc[1] = distance.distance(latlon0, [latlon0[0], self.neighbourhood_coords[i, 1]]).m
-            loc[1] = loc[1] if (latlon0[1] < self.neighbourhood_coords[i, 1]) else -loc[1]
+            loc[0] = distance.distance(latlon0, [self.Coordinates[i, 0], latlon0[1]]).m
+            loc[0] = loc[0] if (latlon0[0] < self.Coordinates[i, 0]) else -loc[0]
+            loc[1] = distance.distance(latlon0, [latlon0[0], self.Coordinates[i, 1]]).m
+            loc[1] = loc[1] if (latlon0[1] < self.Coordinates[i, 1]) else -loc[1]
             Locations[i, :] = loc
 
         self.Locations = tf.Variable(Locations, trainable=False, dtype=tf.float32)
+        
+        
+    def polygon2grid(self, latlon0):
+        """
+        Maps the coordinates in `Polygons` to a grid that follows the reference coordinate `latlon0`.
+        
+        Args:
+            latlon0 (tuple): A tuple containing the reference coordinate in the form (latitude, longitude).
+            Polygons (GeoSeries): A GeoSeries object containing Polygon objects to be mapped to a grid.
+        
+        Returns:
+            MappedPolygons (list): A list of `Polygon` objects containing the mapped coordinates.
+        
+        Notes:
+            This function calculates the distance in meters of each coordinate in `Polygons` to the reference
+            coordinate `latlon0`. It then maps the coordinates to a grid based on their relative position to the reference
+            coordinate, with the reference coordinate as the origin of the grid. The resulting `MappedPolygons` list
+            contains `Polygon` objects with the mapped coordinates.
+        """
+        
+        MappedPolygons = []
+        for Poly in self.Geometry:
+            polygon = Poly.values
+            # Loop through all coordinates and store their latitude and longitude in a grid
+            MappedCoordinates = np.zeros((len(polygon.exterior[0].coords), 2), dtype=np.float32)
+            for i, coord in enumerate(polygon.exterior[0].coords):
+                loc = np.zeros(2, dtype=np.float32)
+                loc[0] = distance.distance(latlon0, [coord[0], latlon0[1]]).m
+                loc[0] = loc[0] if (latlon0[0] < coord[0]) else -loc[0]
+                loc[1] = distance.distance(latlon0, [latlon0[0], coord[1]]).m
+                loc[1] = loc[1] if (latlon0[1] < coord[1]) else -loc[1]
+                MappedCoordinates[i, :] = loc
+            MappedPolygon = Polygon(MappedCoordinates)
+            MappedPolygons.append(MappedPolygon)
+        
+        self.GeometryGrid = MappedPolygons
+
+
     
 
-    def buurt_filter(self):
+    def buurt_filter(self, loadGeometry=False):
         """
         Filters the socio-economic data based on whether the neighbourhoods are present in the geopandas data and 
         stores the relevant data in class variables.
@@ -194,7 +233,7 @@ class InputData:
             neighbourhoods (numpy.ndarray): A 1D numpy array of strings containing the names of the neighbourhoods that 
             are present in the geopandas data.
             
-            neighbourhood_coords (tf.Variable): A 2D numpy array of shape (n, 2), where n is the number of neighbourhoods 
+            Coordinates (tf.Variable): A 2D numpy array of shape (n, 2), where n is the number of neighbourhoods 
             present in the geopandas data. The first column represents the longitude of the center of each polygon, while 
             the second column represents its latitude.
         """
@@ -203,30 +242,62 @@ class InputData:
         Socioeconomic_data=[]
         Population=[]
         neighbourhoods=[]
+        Geometry=[]
         i=0
         print("WARNING: GDF CAN ONLY FIND BUURTEN AND NOT WIJKEN OR CITIES. THEREFORE, A LOT OF DATA WILL BE MISSING:")
-        for loc in self.neighbourhoods:
-            truefalse=False # used to check if the loc is found in the gdf file
-            j = 0
-            for buurt in self.gdf.buurtnaam:
-                if buurt==loc:
-                    truefalse=True
-                    index.append(j)
-                    Socioeconomic_data.append(self.Socioeconomic_data[i])
-                    Population.append(self.Population[i])
-                    neighbourhoods.append(self.neighbourhoods[i])
-                    break
-                else:
-                    j+=1
-
-            if not truefalse: # check if wijk was not found
-                print("Warning:",loc,"has not been found in gdf data. Check if instance should have been found")
-
-            i+=1
-
+        if loadGeometry:
+            for loc in self.neighbourhoods:
+                truefalse=False # used to check if the loc is found in the gdf file
+                j = 0
+                for buurt in range(self.gdf.buurtnaam.shape[0]):
+                    try:
+                        if self.gdf.buurtnaam[buurt][0]==loc:
+                            truefalse=True
+                            index.append(j)
+                            Socioeconomic_data.append(self.Socioeconomic_data[i])
+                            Population.append(self.Population[i])
+                            neighbourhoods.append(self.neighbourhoods[i])
+                            Geometry.append(self.gdf.geometry[buurt])
+                            break
+                        else:
+                            j+=1
+                    except:
+                        break
+    
+                if not truefalse: # check if wijk was not found
+                    print("Warning:",loc,"has not been found in gdf data. Check if instance should have been found")
+    
+                i+=1
+            self.Geometry = Geometry
+        
+        else: # a faster mode than loading all polygons
+            for loc in self.neighbourhoods:
+                truefalse=False # used to check if the loc is found in the gdf file
+                j = 0
+                for buurt in self.gdf.buurtnaam:
+                    try:
+                        if buurt==loc:
+                            truefalse=True
+                            index.append(j)
+                            Socioeconomic_data.append(self.Socioeconomic_data[i])
+                            Population.append(self.Population[i])
+                            neighbourhoods.append(self.neighbourhoods[i])
+                            break
+                        else:
+                            j+=1
+                    except:
+                        break
+    
+                if not truefalse: # check if wijk was not found
+                    print("Warning:",loc,"has not been found in gdf data. Check if instance should have been found")
+    
+                i+=1
+            
         # save all in arrays
         self.Socioeconomic_data = tf.Variable(Socioeconomic_data, trainable=False, dtype=tf.float32)
         self.Population = tf.Variable(Population, trainable=False, dtype=tf.float32)
         self.neighbourhoods = np.array(neighbourhoods)
-        self.neighbourhood_coords = tf.gather(self.center_coordinates, index)
+        self.Coordinates = tf.gather(self.center_coordinates, index)
         self.N = self.Socioeconomic_data.shape[0]
+        
+        

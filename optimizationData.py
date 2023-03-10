@@ -70,23 +70,9 @@ class OptimizationData:
         self.optimizer = optimizer
         
         
-    @property
-    def sumCosts(self):
-        '''
-        Returns
-        -------
-        tf.float32
-            The total sum of the weights.
-
-        '''
-        return self.Cost_SES_variance + self.Cost_popPositive + self.Cost_popBounds + self.Cost_distance
-        
-    
     @tf.function
     def saveCosts(self, SES_variance, cost_popPositive, cost_popBounds, cost_distance):
         '''
-        Records the cost values of the optimization process for plotting purposes.
-    
         Parameters:
             SES_variance (TensorFlow tensor):
                 The variance of the Socioeconomic Status of the communities.
@@ -96,6 +82,22 @@ class OptimizationData:
                 The cost due to the number of individuals in each community.
             cost_distance (TensorFlow tensor):
                 The cost due to the distance between each community.
+        '''
+        self.Cost_SES_variance = ( SES_variance * self.weight_SESvariance ) **self.LN[0]
+        self.Cost_popPositive = ( cost_popPositive * self.weight_popPositive ) **self.LN[1]
+        self.Cost_popBounds = ( cost_popBounds * self.weight_popBounds ) **self.LN[2]
+        self.Cost_distance = ( cost_distance * self.weight_distance )**self.LN[3]
+        
+        
+    @property
+    def totalCost(self):
+        return self.Cost_SES_variance + self.Cost_popPositive + self.Cost_popBounds + self.Cost_distance
+        
+    
+    @tf.function
+    def storeCosts(self):
+        '''
+        Stores the cost values of the optimization process for plotting purposes.
         
         Attributes:
             self.LN (list of ints):
@@ -113,18 +115,16 @@ class OptimizationData:
             self.Cost_distance (TensorFlow tensor):
                 The cost due to the distance between each community.
         '''
-        self.Cost_SES_variance = SES_variance **self.LN[0]
-        self.Cost_popPositive = cost_popPositive **self.LN[1]
-        self.Cost_popBounds = cost_popBounds **self.LN[2]
-        self.Cost_distance = cost_distance **self.LN[3]
-        
-        # Record cost values for plotting
-        self.costs[self.i_iteration, 0] = self.sumCosts
-        self.costs[self.i_iteration, 1] = self.Cost_SES_variance.numpy()
-        self.costs[self.i_iteration, 2] = self.Cost_popPositive.numpy()
-        self.costs[self.i_iteration, 3] = self.Cost_popBounds.numpy()
-        self.costs[self.i_iteration, 4] = self.Cost_distance.numpy()
-        
+        if self.i_iteration < self.N_iterations:
+            self.costs[self.i_iteration, 0] = self.totalCost
+            self.costs[self.i_iteration, 1] = self.Cost_SES_variance.numpy()
+            self.costs[self.i_iteration, 2] = self.Cost_popPositive.numpy()
+            self.costs[self.i_iteration, 3] = self.Cost_popBounds.numpy()
+            self.costs[self.i_iteration, 4] = self.Cost_distance.numpy()
+        else:
+            costs = np.array([self.totalCost,self.Cost_SES_variance.numpy(),
+                self.Cost_popPositive.numpy(),self.Cost_popBounds.numpy(), self.Cost_distance.numpy() ])
+            self.costs = np.append(self.costs, costs[None,:], axis=0)
         self.i_iteration += 1
         
     
@@ -143,7 +143,7 @@ class OptimizationData:
         ax.plot(self.costs[:, 3], label="L1 population bounds", ls="--")
         ax.plot(self.costs[:, 4], label="L1 distance", ls="--")
         ax.plot(self.costs[:, 2], label="L2 population positive", ls=":")
-        ax.set_xlim(0, self.N_iterations-1)
+        ax.set_xlim(0, self.i_iteration-1)
         ax.set_ylim(0, np.max(self.costs[:, 0]-self.costs[:, 2])*1.2)
         ax.set_xlabel("Iterations")
         ax.set_ylabel("Costs")

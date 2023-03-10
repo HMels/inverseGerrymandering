@@ -15,6 +15,7 @@ plt.close('all')
 from inputData import InputData
 from communities import Communities
 from optimizationData import OptimizationData
+import random
 
 class ModelGeo(InputData, tf.keras.Model):
     def __init__(self, InputData, N_communities, N_iterations, optimizer):
@@ -82,7 +83,8 @@ class ModelGeo(InputData, tf.keras.Model):
         self.initialize_distances()
         
         # we label the data with a number that corresponds to the closest community
-        self.labels = tf.Variable(tf.argmin(self.distances, axis=0).numpy() % self.Communities.N, trainable=True, dtype=tf.int32)
+        self.labels = tf.Variable(tf.argmin(self.distances, axis=0).numpy(), trainable=True, dtype=tf.int32)
+        self.labels_initial = tf.Variable(tf.argmin(self.distances, axis=0).numpy(), trainable=False, dtype=tf.int32)
         
         # initialise weights
         self.OptimizationData = OptimizationData(weights=[10,1,1,1], N_iterations=N_iterations,
@@ -167,9 +169,7 @@ class ModelGeo(InputData, tf.keras.Model):
         '''
         #self.labels.assign(tf.math.mod(self.labels, self.Communities.N))
         return tf.reduce_sum(self.Map(inputs), axis=1)
-        
-    
-    
+            
     @tf.function
     def cost_fn(self):
         """
@@ -201,35 +201,65 @@ class ModelGeo(InputData, tf.keras.Model):
         Tensor: A TensorFlow tensor representing the sum of all partial costs.
         """        
         # Calculate variance of socioeconomic data mapped to population map
-        SES_variance = tf.math.reduce_variance( self(self.InputData.Socioeconomic_population) ) * self.OptimizationData.weight_SESvariance
+        SES_variance = tf.math.reduce_variance( self(self.InputData.Socioeconomic_population) )
     
         # Regularization term to ensure population map is positive
-        cost_popPositive = (tf.reduce_sum(tf.abs(tf.where(self.labels < 0, 1., 0.))) * self.OptimizationData.weight_popPositive*100)
+        cost_popPositive = (tf.reduce_sum(tf.abs(tf.where(self.labels < 0, 1., 0.)))*100)
     
         # Regularization term for population limits
         cost_popBounds = tf.reduce_sum(tf.where(self.mapped_Population > self.OptimizationData.popBoundHigh,
                                               tf.abs(self.mapped_Population-self.OptimizationData.popBoundHigh), 0) +
                                      tf.where(self.mapped_Population < self.OptimizationData.popBoundLow, 
-                                              tf.abs(self.mapped_Population-self.OptimizationData.popBoundLow), 0)) * ( 
-                                         self.OptimizationData.weight_popBounds / self.tot_pop 
-                                         )
+                                              tf.abs(self.mapped_Population-self.OptimizationData.popBoundLow), 0)) / self.tot_pop 
     
         # Add regularization term based on distances
         pop_distances = tf.multiply(self.population_Map, self.distances)
-        cost_distance = tf.reduce_sum(pop_distances / self.tot_pop / self.max_distance)*self.OptimizationData.weight_distance
-
-        # Record the partial costs for inspection and return the sum of all partial costs
+        cost_distance = tf.reduce_sum(pop_distances / self.tot_pop / self.max_distance)
+        
+        # Input costs into the OptimizationData model and save them
         self.OptimizationData.saveCosts(SES_variance, cost_popPositive, cost_popBounds, cost_distance)
-        return self.OptimizationData.sumCosts
+        return self.OptimizationData.totalCost  
     
     
     @tf.function
-    def train_step(self):
-        with tf.GradientTape() as tape:
-            loss_value = self.cost_fn()
-        grads = tape.gradient(loss_value, self.trainable_variables)
-        self.OptimizationData.optimizer.apply_gradients(zip(grads, self.trainable_variables))
-        return loss_value  
+    def train(self, temperature=1.2):
+        # Determine the initial cost of the current label assignment
+        current_cost = self.cost_fn()
+        self.OptimizationData.storeCosts() # store the costs to be used later in a plot
+        
+        # Iterate for a fixed number of epochs
+        for iteration in range(self.OptimizationData.N_iterations):
+            # Create a shuffled list of indices
+            indices = list(range(self.labels.shape[0]))
+            random.shuffle(indices)
+            
+            # Iterate over the shuffled indices
+            for i in indices:
+                # Try changing the label value for this element
+                new_label = random.randrange(self.Communities.N)
+                old_labels = tf.identity(self.labels).numpy()
+                new_labels = tf.identity(self.labels).numpy()
+                
+                #if new_label==old_labels[i]: new_label = new_label+1%self.Communities.N
+                new_labels[i] = new_label
+                
+                # Calculate the new cost and determine whether to accept the new label
+                self.labels.assign(new_labels)
+                new_cost = self.cost_fn()
+                delta_cost = new_cost - current_cost
+                if delta_cost < 0 or random.uniform(0, 1) < tf.exp(-delta_cost / temperature):
+                    current_cost = new_cost
+                else:
+                    self.labels.assign(old_labels)
+                
+            if iteration % 10 == 0:
+                # Print current loss and individual cost components
+                print("Step: {}, Loss: {}".format(iteration, current_cost.numpy()))
+                self.OptimizationData.printCosts()
+                
+            # Reduce the temperature at the end of each epoch
+            temperature *= 0.99
+            self.OptimizationData.storeCosts() # store the costs to be used later in a plot
             
     
     @tf.function
