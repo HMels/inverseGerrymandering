@@ -44,7 +44,6 @@ class Communities:
         -------
         tf.float32
             The socioeconomic data multiplied by the population to get the actual socioeconomic value.
-
         '''
         return self.Socioeconomic_data * self.Population
         

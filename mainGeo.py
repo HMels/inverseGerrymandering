@@ -9,6 +9,7 @@ import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
 from geopy.geocoders import Nominatim
+from matplotlib.patches import Polygon as PolygonPatch
 
 # import modules from file
 from inputData import InputData
@@ -67,20 +68,7 @@ model.applyMapCommunities()
 print("FINISHED!\n")
 
 
-#%% Plot the population on a map of Amsterdam  
-cdict = {1: 'red', 2: 'blue', 3: 'green', 4: 'yellow', 0: 'c'}
-colour = []
-for label in model.labels.numpy():
-    colour.append(cdict[label])
-  
-img = plt.imread("Data/amsterdam.PNG")
-fig, ax = plt.subplots()
-ax.imshow(img, extent=[-3000, 4000, -2300, 3000])
-ax.scatter(model.InputData.Locations[:, 0], model.InputData.Locations[:, 1], s=model.InputData.Population/100, 
-           c = colour, alpha=1) # Plot locations
-ax.scatter(0, 0, alpha=.7) # Plot origin
-
-
+#%% Plotting
 # Pltot 
 fig1, ax1 = model.OptimizationData.plotCosts()
 
@@ -109,9 +97,7 @@ model.print_summary()
 
 
 #% Polygon
-from matplotlib.patches import Polygon as PolygonPatch
-
-cdict = {1: 'red', 2: 'blue', 3: 'green', 4: 'yellow', 0: 'c'}
+cdict = {0: 'c', 1: 'red', 2: 'blue', 3: 'green', 4: 'yellow'}
 colour = []
 for label in model.labels.numpy():
     colour.append(cdict[label])
@@ -124,6 +110,10 @@ extent=[-3000, 4000, -2300, 3000]
 for i, polygon in enumerate(model.InputData.GeometryGrid):
     patch = PolygonPatch(np.array(polygon.exterior.xy).T, facecolor=colour[i], alpha=0.5)
     ax.add_patch(patch)
+    
+colors = [cdict[i] for i in range(model.Communities.N)]
+ax.scatter(model.Communities.Locations[:,0], model.Communities.Locations[:,1],
+           s=model.Communities.Population/100, c=colors, alpha=.8, ec='black')
 
 ax.set_xlim(extent[0],extent[1])
 ax.set_ylim(extent[2],extent[3])

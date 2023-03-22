@@ -5,7 +5,6 @@ Created on Thu Mar  9 19:48:13 2023
 @author: Mels
 """
 
-import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
 
@@ -87,7 +86,7 @@ class ModelGeo(InputData, tf.keras.Model):
         self.labels_initial = tf.Variable(tf.argmin(self.distances, axis=0).numpy(), trainable=False, dtype=tf.int32)
         
         # initialise weights
-        self.OptimizationData = OptimizationData(weights=[10,1,1,1], N_iterations=N_iterations,
+        self.OptimizationData = OptimizationData(weights=[10,1,1,10], N_iterations=N_iterations,
                                                  LN=[1,2,1,1], optimizer=optimizer)
         
         # Initialize population parameters
@@ -281,10 +280,10 @@ class ModelGeo(InputData, tf.keras.Model):
 
         Parameters:
         -----------
-        Locations: tf.float32 Tensor
-            A tensor of shape (Communities.N, 2) containing the grid locations of the initial neighborhoods.
+        InputData.Locations: tf.float32 Tensor
+            A tensor of shape (InputData.N, 2) containing the grid locations of the initial neighborhoods.
         Communities.Locations: tf.float32 Tensor
-            A tensor of shape (InputData.N, 2) containing the grid locations of the newly created communities.
+            A tensor of shape (Communities.N, 2) containing the grid locations of the newly created communities.
 
         Returns:
         --------
