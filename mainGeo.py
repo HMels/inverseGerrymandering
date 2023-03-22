@@ -16,7 +16,7 @@ from modelGeo import ModelGeo
 
 
 #%% Load data
-if True: # loading the geoData takes too long so this way I only have to do it once
+if False: # loading the geoData takes too long so this way I only have to do it once
     # Source: https://opendata.cbs.nl/statline/#/CBS/nl/dataset/85163NED/table?ts=1669130926836
     # Download the file named "CSV met statistische symbolen"
     inputData = InputData("Data/SES_WOA_scores_per_wijk_en_buurt_08032023_175111.csv")
@@ -108,8 +108,7 @@ print("OPTIMISED VALUES: ")
 model.print_summary()
 
 
-
-#%% Polygon
+#% Polygon
 from matplotlib.patches import Polygon as PolygonPatch
 
 cdict = {1: 'red', 2: 'blue', 3: 'green', 4: 'yellow', 0: 'c'}
@@ -119,9 +118,12 @@ for label in model.labels.numpy():
     
 #img = plt.imread("Data/amsterdam.PNG")
 fig, ax = plt.subplots()
-#ax.imshow(img, extent=[-3000, 4000, -2300, 3000])
+extent=[-3000, 4000, -2300, 3000]
+#ax.imshow(img, extent=extent)
     
 for i, polygon in enumerate(model.InputData.GeometryGrid):
     patch = PolygonPatch(np.array(polygon.exterior.xy).T, facecolor=colour[i], alpha=0.5)
     ax.add_patch(patch)
-    
+
+ax.set_xlim(extent[0],extent[1])
+ax.set_ylim(extent[2],extent[3])
