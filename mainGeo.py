@@ -117,15 +117,11 @@ colour = []
 for label in model.labels.numpy():
     colour.append(cdict[label])
     
-img = plt.imread("Data/amsterdam.PNG")
+#img = plt.imread("Data/amsterdam.PNG")
 fig, ax = plt.subplots()
-ax.imshow(img, extent=[-3000, 4000, -2300, 3000])
+#ax.imshow(img, extent=[-3000, 4000, -2300, 3000])
     
 for i, polygon in enumerate(model.InputData.GeometryGrid):
-    print(type(polygon))
-    print(polygon.exterior.coords)
-    #patch = PolygonPatch(polygon, facecolor=colour[i], alpha=0.5)
-    #ax.add_patch(patch)
-    patch = PolygonPatch(polygon, facecolor=colour[i], alpha=0.5)
-    patch.set_xy(np.array(polygon.exterior.xy).T)
+    patch = PolygonPatch(np.array(polygon.exterior.xy).T, facecolor=colour[i], alpha=0.5)
     ax.add_patch(patch)
+    
