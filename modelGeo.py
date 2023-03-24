@@ -7,6 +7,7 @@ Created on Thu Mar  9 19:48:13 2023
 
 import tensorflow as tf
 import matplotlib.pyplot as plt
+import numpy as np
 
 tf.config.run_functions_eagerly(True)  ### TODO should be False
 plt.close('all')
@@ -80,10 +81,7 @@ class ModelGeo(InputData, tf.keras.Model):
         
         # Initialize the distance matrix and the economic values
         self.initialize_distances()
-        
-        # we label the data with a number that corresponds to the closest community
-        self.labels = tf.Variable(tf.argmin(self.distances, axis=0).numpy(), trainable=True, dtype=tf.int32)
-        self.labels_initial = tf.Variable(tf.argmin(self.distances, axis=0).numpy(), trainable=False, dtype=tf.int32)
+        self.initialize_labels()
         
         # initialise weights
         self.OptimizationData = OptimizationData(weights=[10,1,1,10], N_iterations=N_iterations,
@@ -304,6 +302,98 @@ class ModelGeo(InputData, tf.keras.Model):
         self.distances = tf.sqrt(tf.reduce_sum(tf.square(InputLocations_repeated - CommunitiesLocations_repeated), axis=-1))
         self.max_distance = tf.reduce_max(self.distances)
         return self.distances
+    
+    
+    def initialize_labels(self):
+        '''
+        Initialised the labels via:
+            1. The neighbourhoods closest to the community centers will be initialised
+                as those communities. The rest will be initiated with a Noe Label
+            2. The model iterates over the communities and the adjecent neighbours of 
+                those communities
+                2.1. The model calculates which new neighbour (that is not part of another community)
+                    would result in the SES value getting closer to the average SES
+                2.2. The model chooses That neighbour and adds its values to the communities
+                2.3. The model deletes neigbours of communities that are already part of said commynity
+                2.4. The model evaluates if there are any neighbourhoods that are not part of 
+                    Communities
+                2.5. If not, the model stops. Else it will iterate further
+
+        Raises
+        ------
+        Exception
+            If the distances have not been initialised.
+
+        Returns
+        -------
+        tf.Variable int  
+            The newly calculated labels that map the neighbourhoods to their Communities.
+
+        '''
+        try: self.distances
+        except: raise Exception("Distances should be initialized before running this function!")
+        
+        labels = [None for _ in range(self.InputData.N)]
+        self.GeometryNeighbours = self.InputData.find_polygon_neighbors()
+        
+        # create the basis of the communities. The initial neighbours from which the communities spread out
+        index = tf.argmin(self.distances, axis=1)
+        com_Neighbours=[]       # the neighbours of the communities in the current state
+        com_SES=[]              # the SES value of the communities in the current state
+        com_index=[]            # the indices of neighbourhoods in the current communities
+        for i in range(self.Communities.N):
+            labels[index[i]]=i
+            com_Neighbours.append(list(self.GeometryNeighbours[index[i]]))
+            com_SES.append(self.InputData.Socioeconomic_population[index[i]].numpy())
+            com_index.append([index[i].numpy()])        
+                    
+        # let the communities spread out to nearest neighbours
+        avg_SES = tf.reduce_mean(self.InputData.Socioeconomic_population)
+        while True:
+            
+            # iterate over the communities and load their current values
+            for i in range(self.Communities.N): 
+                index_current = com_index[i]
+                
+                # calculate the SES values of of adding the neighbourhoods to the list 
+                SES_current = tf.reduce_sum(tf.gather(self.InputData.Socioeconomic_population, index_current))
+                SES_neighbour = tf.gather(self.InputData.Socioeconomic_population, com_Neighbours[i])
+                SES_option=(np.abs((SES_current + SES_neighbour - avg_SES).numpy()))
+                    
+                # choose the SES value that lies closest to the average
+                ##TODO make sure this is done after the previous loop is done, such that it can decide double neighbourhoods
+                for j in range(len(SES_option)): 
+                    index_decision = com_Neighbours[i][np.argsort(SES_option)[j]]
+                    if labels[index_decision] is None: # Neighbourhood should not be part of community already
+                        break
+                    
+                if index_decision in com_index: raise Exception("The index_decision is already part of the community!")
+                
+                if labels[index_decision] is None: # in case all neighbours are already taken
+                    # add the newly decided values to the community
+                    labels[index_decision] = i
+                    com_Neighbours[i] += list(self.GeometryNeighbours[index_decision])
+                    com_SES[i] +=  tf.gather(self.InputData.Socioeconomic_population, index_decision).numpy()
+                    com_index[i].append(index_decision)
+                    
+                # delete neighbours that are within the community
+                for nghb_i in range(len(com_Neighbours[i])-1, -1, -1):
+                    if com_Neighbours[i][nghb_i] in com_index:
+                        com_Neighbours[i].pop(nghb_i)
+                    #if com_Neighbours[i].count(com_Neighbours[i][nghb_i])>1:
+                    #    com_Neighbours[i].pop(nghb_i)
+                        
+                            
+            count = 0
+            for label in labels:
+                if label is None:
+                    count+=1
+            if count == 0: break
+        
+        
+        self.labels = tf.Variable(labels)   
+        self.applyMapCommunities()         
+        return self.labels
     
     
     @tf.function

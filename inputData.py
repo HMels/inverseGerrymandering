@@ -291,4 +291,25 @@ class InputData:
         self.Coordinates = tf.gather(self.center_coordinates, index)
         self.N = self.Socioeconomic_data.shape[0]
         
+    def find_polygon_neighbors(self):
+        try: self.GeometryGrid
+        except: raise Exception("Polygons (GeometryGrid) have not been generated. Use self.polygon2grid().")
+        num_polygons = len(self.GeometryGrid)
+        neighbors = []
         
+        # Loop through each polygon and find its neighbors
+        for i in range(num_polygons):
+            neighbors_i = []
+            poly_i = self.GeometryGrid[i]
+            
+            # Loop through each other polygon and check if it intersects with poly_i
+            for j in range(num_polygons):
+                if i != j:
+                    poly_j = self.GeometryGrid[j]
+                    
+                    if poly_i.intersects(poly_j):
+                        neighbors_i.append(j)
+            
+            neighbors.append(neighbors_i)
+        
+        return np.array(neighbors)

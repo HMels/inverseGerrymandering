@@ -61,6 +61,46 @@ SES_initial = model.mapped_Socioeconomic_data.numpy()
 print("INITIAL VALUES: ")
 model.print_summary()
 
+
+#%% plot initial state
+cdict = {0: 'c', 1: 'red', 2: 'blue', 3: 'green', 4: 'yellow'}
+colour = []
+for label in model.labels.numpy():
+    colour.append(cdict[label])
+
+#img = plt.imread("Data/amsterdam.PNG")
+fig, ax = plt.subplots()
+extent=[-3000, 4000, -2300, 3000]
+#ax.imshow(img, extent=extent)
+    
+for i, polygon in enumerate(model.InputData.GeometryGrid):
+    patch = PolygonPatch(np.array(polygon.exterior.xy).T, facecolor=colour[i], alpha=0.5)
+    ax.add_patch(patch)
+    
+ax.set_xlim(extent[0],extent[1])
+ax.set_ylim(extent[2],extent[3])
+ax.set_title('Communities Before Optimization')
+    
+
+# histogram of the economic data 
+#TODO, delete this initial state
+fig2, ax2 = plt.subplots()
+num_bins = model.InputData.Socioeconomic_data.shape[0]
+SES_append = np.append(model.InputData.Socioeconomic_data, model.Communities.Socioeconomic_data)
+bin_edges = np.linspace(np.min(SES_append), np.max(SES_append), num_bins+1)
+
+n, bins, patches = ax2.hist(model.InputData.Socioeconomic_data.numpy(), bins=bin_edges, color = 'r',edgecolor = "black",
+                            alpha=0.3, label='Initial neighbourhoods', density=True)
+n, bins, patches = ax2.hist(SES_initial, bins=bin_edges, color = 'orange',edgecolor = "grey",
+                                                        alpha=0.4, label='Initial communities', density=True)
+
+ax2.legend(loc='upper right')
+ax2.set_xlabel('SES')
+ax2.set_ylabel('Frequency')
+ax2.set_title('Comparison of the economic data by population')
+plt.show()
+
+'''
 #%% Train the model for Niterations iterations
 print("OPTIMISING...")
 model.train()
@@ -68,10 +108,27 @@ model.applyMapCommunities()
 print("FINISHED!\n")
 
 
-#%% Plotting
-# Pltot 
-fig1, ax1 = model.OptimizationData.plotCosts()
+#%% Polygon Plot    
+#img = plt.imread("Data/amsterdam.PNG")
+fig, ax = plt.subplots()
+extent=[-3000, 4000, -2300, 3000]
+#ax.imshow(img, extent=extent)
+    
+for i, polygon in enumerate(model.InputData.GeometryGrid):
+    patch = PolygonPatch(np.array(polygon.exterior.xy).T, facecolor=colour[i], alpha=0.5)
+    ax.add_patch(patch)
+    
+colors = [cdict[i] for i in range(model.Communities.N)]
+ax.scatter(model.Communities.Locations[:,0], model.Communities.Locations[:,1],
+           s=model.Communities.Population/100, c=colors, alpha=.8, ec='black')
 
+ax.set_xlim(extent[0],extent[1])
+ax.set_ylim(extent[2],extent[3])
+ax.set_title('Communities After Optimization')
+
+
+#%% Plotting
+fig1, ax1 = model.OptimizationData.plotCosts()
 
 # histogram of the economic data 
 fig2, ax2 = plt.subplots()
@@ -94,26 +151,4 @@ plt.show()
 
 print("OPTIMISED VALUES: ")
 model.print_summary()
-
-
-#% Polygon
-cdict = {0: 'c', 1: 'red', 2: 'blue', 3: 'green', 4: 'yellow'}
-colour = []
-for label in model.labels.numpy():
-    colour.append(cdict[label])
-    
-#img = plt.imread("Data/amsterdam.PNG")
-fig, ax = plt.subplots()
-extent=[-3000, 4000, -2300, 3000]
-#ax.imshow(img, extent=extent)
-    
-for i, polygon in enumerate(model.InputData.GeometryGrid):
-    patch = PolygonPatch(np.array(polygon.exterior.xy).T, facecolor=colour[i], alpha=0.5)
-    ax.add_patch(patch)
-    
-colors = [cdict[i] for i in range(model.Communities.N)]
-ax.scatter(model.Communities.Locations[:,0], model.Communities.Locations[:,1],
-           s=model.Communities.Population/100, c=colors, alpha=.8, ec='black')
-
-ax.set_xlim(extent[0],extent[1])
-ax.set_ylim(extent[2],extent[3])
+'''
