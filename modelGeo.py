@@ -8,6 +8,8 @@ Created on Thu Mar  9 19:48:13 2023
 import tensorflow as tf
 import matplotlib.pyplot as plt
 import numpy as np
+import random
+import copy 
 
 tf.config.run_functions_eagerly(True)  ### TODO should be False
 plt.close('all')
@@ -15,7 +17,6 @@ plt.close('all')
 from inputData import InputData
 from communities import Communities
 from optimizationData import OptimizationData
-import random
 
 class ModelGeo(InputData, tf.keras.Model):
     def __init__(self, InputData, N_communities, N_iterations, optimizer):
@@ -69,7 +70,8 @@ class ModelGeo(InputData, tf.keras.Model):
         #    Population (numpy.ndarray): A 1D array of floats containing the number of private Population in each neighbourhood.
         #    Socioeconomic_data (numpy.ndarray): A 1D array of floats containing the socio-economic value of each neighbourhood.
         #    Locations (numpy.ndarray): A numpy array of shape (n,2) containing the mapped coordinates.
-        self.InputData = InputData 
+        self.InputData = InputData
+        self.GeometryNeighbours = None
         
         if self.InputData.Locations is None:
             Exception('DataLoader has not initialised neighbourhood locations yet. Use the function DataLoader.map2grid(latlon0) to do this!')
@@ -84,7 +86,7 @@ class ModelGeo(InputData, tf.keras.Model):
         self.initialize_labels()
         
         # initialise weights
-        self.OptimizationData = OptimizationData(weights=[10,1,1,10], N_iterations=N_iterations,
+        self.OptimizationData = OptimizationData(weights=[10,1,5,10], N_iterations=N_iterations,
                                                  LN=[1,2,1,1], optimizer=optimizer)
         
         # Initialize population parameters
@@ -120,7 +122,7 @@ class ModelGeo(InputData, tf.keras.Model):
         
         
     @tf.function
-    def Map(self, inputs):
+    def Map(self, inputs, labels=None):
         '''
         Creates a Map of the inputs according to the labels
 
@@ -139,13 +141,23 @@ class ModelGeo(InputData, tf.keras.Model):
         (Communities.N x InputData.N) or (Communities.N x InputData.N x 2) Tensor
             The Mapped output
         '''
-        if tf.squeeze(inputs).shape[0]!=self.labels.shape[0]: 
-            raise Exception("inputs should have the same lenght as self.labels!")
-        indices = tf.transpose(tf.stack([self.labels, tf.range(self.InputData.N)]))
-        if len(tf.squeeze(inputs).shape)==2:
-            return tf.scatter_nd(indices, tf.squeeze(inputs), shape = (self.Communities.N, self.InputData.N, 2))
-        else:
-            return tf.scatter_nd(indices, tf.squeeze(inputs), shape = (self.Communities.N, self.InputData.N))
+        if labels is None:
+            if tf.squeeze(inputs).shape[0]!=self.labels.shape[0]: 
+                raise Exception("inputs should have the same lenght as self.labels!")
+            indices = tf.transpose(tf.stack([self.labels, tf.range(self.InputData.N)]))
+            if len(tf.squeeze(inputs).shape)==2:
+                return tf.scatter_nd(indices, tf.squeeze(inputs), shape = (self.Communities.N, self.InputData.N, 2))
+            else:
+                return tf.scatter_nd(indices, tf.squeeze(inputs), shape = (self.Communities.N, self.InputData.N))
+            
+        else: # in the case we give a different map        
+            if tf.squeeze(inputs).shape[0]!=labels.shape[0]: 
+                raise Exception("inputs should have the same lenght as self.labels!")
+            indices = tf.transpose(tf.stack([labels, tf.range(self.InputData.N)]))
+            if len(tf.squeeze(inputs).shape)==2:
+                return tf.scatter_nd(indices, tf.squeeze(inputs), shape = (self.Communities.N, self.InputData.N, 2))
+            else:
+                return tf.scatter_nd(indices, tf.squeeze(inputs), shape = (self.Communities.N, self.InputData.N))
         
     
     @tf.function
@@ -164,9 +176,9 @@ class ModelGeo(InputData, tf.keras.Model):
             The transformed values of the Tensor.
 
         '''
-        #self.labels.assign(tf.math.mod(self.labels, self.Communities.N))
         return tf.reduce_sum(self.Map(inputs), axis=1)
             
+    
     @tf.function
     def cost_fn(self):
         """
@@ -200,9 +212,6 @@ class ModelGeo(InputData, tf.keras.Model):
         # Calculate variance of socioeconomic data mapped to population map
         SES_variance = tf.math.reduce_variance( self(self.InputData.Socioeconomic_population) )
     
-        # Regularization term to ensure population map is positive
-        cost_popPositive = (tf.reduce_sum(tf.abs(tf.where(self.labels < 0, 1., 0.)))*100)
-    
         # Regularization term for population limits
         cost_popBounds = tf.reduce_sum(tf.where(self.mapped_Population > self.OptimizationData.popBoundHigh,
                                               tf.abs(self.mapped_Population-self.OptimizationData.popBoundHigh), 0) +
@@ -210,14 +219,14 @@ class ModelGeo(InputData, tf.keras.Model):
                                               tf.abs(self.mapped_Population-self.OptimizationData.popBoundLow), 0)) / self.tot_pop 
     
         # Add regularization term based on distances
-        pop_distances = tf.multiply(self.population_Map, self.distances)
-        cost_distance = tf.reduce_sum(pop_distances / self.tot_pop / self.max_distance)
+        #pop_distances = tf.multiply(self.population_Map, self.distances)
+        #cost_distance = tf.reduce_sum(pop_distances / self.tot_pop / self.max_distance)
         
         # Input costs into the OptimizationData model and save them
-        self.OptimizationData.saveCosts(SES_variance, cost_popPositive, cost_popBounds, cost_distance)
-        return self.OptimizationData.totalCost  
+        self.OptimizationData.saveCosts(SES_variance, tf.Variable(0.), cost_popBounds, tf.Variable(0.))
+        return self.OptimizationData.totalCost
     
-    
+    '''
     @tf.function
     def train(self, temperature=1.2):
         # Determine the initial cost of the current label assignment
@@ -249,14 +258,116 @@ class ModelGeo(InputData, tf.keras.Model):
                 else:
                     self.labels.assign(old_labels)
                 
-            if iteration % 10 == 0:
-                # Print current loss and individual cost components
-                print("Step: {}, Loss: {}".format(iteration, current_cost.numpy()))
-                self.OptimizationData.printCosts()
-                
             # Reduce the temperature at the end of each epoch
             temperature *= 0.99
             self.OptimizationData.storeCosts() # store the costs to be used later in a plot
+    '''        
+            
+    @tf.function
+    def refine(self, Nit, temperature=1.2):
+        
+        # load neigbhours
+        if self.GeometryNeighbours is not None: 
+            self.GeometryNeighbours = self.InputData.find_polygon_neighbors()
+            
+        for i in range(Nit):
+            # iterate over the neighbourhoods 
+            labelslist = list(range(self.InputData.N))
+            random.shuffle(labelslist)
+            for label in labelslist:
+                label_old = self.labels[label]
+                label_cost = self.cost_fn()
+                
+                # iterate over the neighbours to 
+                neighbours = self.GeometryNeighbours[label]
+                random.shuffle(neighbours)
+                labellist_tried=[] # list of labels that have been tried already
+                for neighbour in neighbours:
+                    # check if label is not the same or hasn't been tried before
+                    if ( self.labels[neighbour] != self.labels[label] and
+                        self.labels[neighbour] not in labellist_tried):
+                        
+                        self.labels[label].assign(self.labels[neighbour])
+                        labellist_tried.append(self.labels[label].numpy())
+                        neighbour_cost = self.cost_fn()
+                        
+                        # choose to accept or reject
+                        if neighbour_cost < label_cost:
+                            label_cost = neighbour_cost
+                                                        
+                        else:
+                            # Calculate the probability of accepting a higher-cost move
+                            delta = neighbour_cost - label_cost
+                            prob_accept = tf.exp(-delta / temperature)
+                            # Accept the move with probability prob_accept
+                            if random.uniform(0, 1) < prob_accept:
+                                label_cost = neighbour_cost
+                            else:
+                                self.labels[label].assign(label_old)
+                                
+                                
+            self.OptimizationData.storeCosts()    
+            if i % 10 == 0:
+                # Print current loss and individual cost components
+                print("Step: {}, Loss: {}".format(i, label_cost.numpy()))
+                self.OptimizationData.printCosts()
+                
+            temperature *= 0.99
+        return self.labels
+         
+        
+    '''  
+    @tf.function
+    def refine(self, Nit, Temperature):
+        
+        if self.GeometryNeighbours is not None: 
+            self.GeometryNeighbours = self.InputData.find_polygon_neighbors()
+            
+        # create the list of neighbours for a label
+        com_Neighbours = []
+        labels = self.labels.numpy()
+        for i in range(self.Communities.N):
+            nghbrs = np.concatenate( self.GeometryNeighbours[ self.labels==i ] )
+            
+            # delete double indices or indices that are in the same group
+            for index in range(len(nghbrs)-1,-1,-1):
+                    if (nghbrs.count(nghbrs[index])>1 or 
+                        nghbrs[index] in np.argwhere(self.labels==i) ):
+                        nghbrs.pop(index)           
+                        
+            com_Neighbours.append(nghbrs)
+            
+        
+        for i in range(Nit):
+            # iterate over the communities and load their current values
+            labels = self.labels.numpy()
+            labelslist = list(range(self.Communities.N))
+            random.shuffle(labelslist)
+            for label in labelslist:
+                label_cost = self.cost_fn()
+                
+                # iterate overthe neigbhours and change a label to see if it improves
+                options = []
+                for neighbour in com_Neighbours[label]:                    
+                    labels[neighbour] = label
+                    neighbour_cost = self.cost_fn(
+                        tf.reduce_sum(self.Map(inputs), axis=1)
+                        )
+
+                    # choose which one move
+                    if neighbour_cost < label_cost:
+                        label_cost = neighbour_cost
+                    else:
+                        # Calculate the probability of accepting a higher-cost move
+                        delta = neighbour_cost - label_cost
+                        prob_accept = tf.exp(-delta / Temperature)
+                        # Accept the move with probability prob_accept
+                        if random.uniform(0, 1) < prob_accept:
+                            label_cost = neighbour_cost
+                        else:
+                            self.labels[label] = label
+        return self.labels
+    '''
             
     
     @tf.function
@@ -352,7 +463,9 @@ class ModelGeo(InputData, tf.keras.Model):
         while True:
             
             # iterate over the communities and load their current values
-            for i in range(self.Communities.N): 
+            Coms = list(range(self.Communities.N))
+            random.shuffle(Coms)
+            for i in Coms:
                 index_current = com_index[i]
                 
                 # calculate the SES values of of adding the neighbourhoods to the list 

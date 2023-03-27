@@ -15,6 +15,28 @@ from matplotlib.patches import Polygon as PolygonPatch
 from inputData import InputData
 from modelGeo import ModelGeo
 
+def create_color_dict(N):
+    """
+    Creates a dictionary of colors with RGB values that are evenly spaced.
+    
+    Parameters:
+    - N (int): The number of colors to generate.
+    
+    Returns:
+    - colors_dict (dict): A dictionary of colors with keys ranging from 0 to N-1 and values in the format
+                          recognized by matplotlib.pyplot.
+    """
+    cmap = plt.cm.get_cmap('gist_rainbow', N)  # Get a colormap with N colors
+    
+    colors_dict = {}
+    for i in range(N):
+        rgb = cmap(i)[:3]  # Extract the RGB values from the colormap
+        color = np.array(rgb) * 255  # Convert the RGB values from [0, 1] to [0, 255]
+        colors_dict[i] = '#{:02x}{:02x}{:02x}'.format(*color.astype(int))  # Convert the RGB values to hex format
+    
+    return colors_dict
+
+
 
 #%% Load data
 if False: # loading the geoData takes too long so this way I only have to do it once
@@ -40,7 +62,7 @@ inputData.polygon2grid(latlon0)
 
 
 #%% Define model parameters
-N_communities = 5 # Number of communities
+N_communities = 7 # Number of communities
 N_iterations = 50 # Number of iterations for training
 
 # Define optimization algorithm and learning rate
@@ -62,21 +84,24 @@ print("INITIAL VALUES: ")
 model.print_summary()
 
 
+
 #%% plot initial state
-cdict = {0: 'c', 1: 'red', 2: 'blue', 3: 'green', 4: 'yellow'}
+#cdict = {0: 'c', 1: 'red', 2: 'blue', 3: 'green', 4: 'yellow', 5:}
+cdict = create_color_dict(N_communities)
 colour = []
 for label in model.labels.numpy():
     colour.append(cdict[label])
 
-#img = plt.imread("Data/amsterdam.PNG")
 fig, ax = plt.subplots()
-extent=[-3000, 4000, -2300, 3000]
-#ax.imshow(img, extent=extent)
-    
+extent=[-2000, 2000, -1200, 2800]   
 for i, polygon in enumerate(model.InputData.GeometryGrid):
     patch = PolygonPatch(np.array(polygon.exterior.xy).T, facecolor=colour[i], alpha=0.5)
     ax.add_patch(patch)
-    
+ 
+colors = [cdict[i] for i in range(model.Communities.N)]
+ax.scatter(model.Communities.Locations[:,0], model.Communities.Locations[:,1],
+           s=model.Communities.Population/100, c=colors, alpha=.8, ec='black')    
+
 ax.set_xlim(extent[0],extent[1])
 ax.set_ylim(extent[2],extent[3])
 ax.set_title('Communities Before Optimization')
@@ -100,20 +125,21 @@ ax2.set_ylabel('Frequency')
 ax2.set_title('Comparison of the economic data by population')
 plt.show()
 
-'''
+
 #%% Train the model for Niterations iterations
 print("OPTIMISING...")
-model.train()
+model.refine(N_iterations, temperature=0)
 model.applyMapCommunities()
 print("FINISHED!\n")
 
 
 #%% Polygon Plot    
-#img = plt.imread("Data/amsterdam.PNG")
-fig, ax = plt.subplots()
-extent=[-3000, 4000, -2300, 3000]
-#ax.imshow(img, extent=extent)
+# reload colours
+colour = []
+for label in model.labels.numpy():
+    colour.append(cdict[label])
     
+fig, ax = plt.subplots()   
 for i, polygon in enumerate(model.InputData.GeometryGrid):
     patch = PolygonPatch(np.array(polygon.exterior.xy).T, facecolor=colour[i], alpha=0.5)
     ax.add_patch(patch)
@@ -151,4 +177,3 @@ plt.show()
 
 print("OPTIMISED VALUES: ")
 model.print_summary()
-'''
