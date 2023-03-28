@@ -92,7 +92,7 @@ class ModelGeo(InputData, tf.keras.Model):
         # Initialize population parameters
         self.tot_pop = tf.reduce_sum(self.InputData.Population)
         self.avg_pop = self.tot_pop / self.Communities.N # Average population size
-        self.OptimizationData.initialize_popBoundaries(self.avg_pop, population_bounds=[0.8, 1.2])
+        self.OptimizationData.initialize_popBoundaries(self.avg_pop, population_bounds=[0.9, 1.1])
         
         self.initialize_weights()   
         

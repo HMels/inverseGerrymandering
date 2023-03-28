@@ -61,7 +61,7 @@ inputData.polygon2grid(latlon0)
 
 
 #%% Define model
-N_communities = 7 # Number of communities
+N_communities = 5 # Number of communities
 N_iterations = 50 # Number of iterations for training
 
 # Define optimization algorithm and learning rate
