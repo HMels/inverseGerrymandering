@@ -94,25 +94,6 @@ class OptimizationData:
         return self.Cost_SES_variance + self.Cost_popPositive + self.Cost_popBounds + self.Cost_distance
         
     
-    #@tf.function
-    #def calculateCosts(self, SES_variance, cost_popBounds):#, cost_distance):
-        #'''
-        #Parameters:
-        #    SES_variance (TensorFlow tensor):
-        #        The variance of the Socioeconomic Status of the communities.
-        #    #cost_popPositive (TensorFlow tensor):
-        #    #    The cost due to the percentage of positive cases of COVID-19 in each community.
-        #    cost_popBounds (TensorFlow tensor):
-        #        The cost due to the number of individuals in each community.
-        #    cost_distance (TensorFlow tensor):
-        #        The cost due to the distance between each community.
-        #'''
-       # Cost_SES_variance = ( SES_variance * self.weight_SESvariance ) **self.LN[0]
-        #Cost_popBounds = ( cost_popBounds * self.weight_popBounds ) **self.LN[2]
-        #Cost_distance = ( cost_distance * self.weight_distance )**self.LN[3]
-        #return Cost_SES_variance + Cost_popBounds #+ Cost_distance
-        
-    
     @tf.function
     def storeCosts(self):
         '''

@@ -9,7 +9,6 @@ import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
 from geopy.geocoders import Nominatim
-from matplotlib.patches import Polygon as PolygonPatch
 
 # import modules from file
 from inputData import InputData
@@ -39,7 +38,7 @@ def create_color_dict(N):
 
 
 #%% Load data
-if False: # loading the geoData takes too long so this way I only have to do it once
+if True: # loading the geoData takes too long so this way I only have to do it once
     # Source: https://opendata.cbs.nl/statline/#/CBS/nl/dataset/85163NED/table?ts=1669130926836
     # Download the file named "CSV met statistische symbolen"
     inputData = InputData("Data/SES_WOA_scores_per_wijk_en_buurt_08032023_175111.csv")
@@ -61,7 +60,7 @@ inputData.map2grid(latlon0)
 inputData.polygon2grid(latlon0)
 
 
-#%% Define model parameters
+#%% Define model
 N_communities = 7 # Number of communities
 N_iterations = 50 # Number of iterations for training
 
@@ -78,53 +77,19 @@ model = ModelGeo(inputData, N_communities, N_iterations, optimizer)
 
 #TODO discuss the figures I get. Compare with how good the reguralisation works and use different regs
 '''
+
+
+#%% plot initial state
 SES_initial = model.mapped_Socioeconomic_data.numpy()
 
 print("INITIAL VALUES: ")
 model.print_summary()
 
-
-
-#%% plot initial state
 #cdict = {0: 'c', 1: 'red', 2: 'blue', 3: 'green', 4: 'yellow', 5:}
 cdict = create_color_dict(N_communities)
-colour = []
-for label in model.labels.numpy():
-    colour.append(cdict[label])
-
-fig, ax = plt.subplots()
-extent=[-2000, 2000, -1200, 2800]   
-for i, polygon in enumerate(model.InputData.GeometryGrid):
-    patch = PolygonPatch(np.array(polygon.exterior.xy).T, facecolor=colour[i], alpha=0.5)
-    ax.add_patch(patch)
- 
-colors = [cdict[i] for i in range(model.Communities.N)]
-ax.scatter(model.Communities.Locations[:,0], model.Communities.Locations[:,1],
-           s=model.Communities.Population/100, c=colors, alpha=.8, ec='black')    
-
-ax.set_xlim(extent[0],extent[1])
-ax.set_ylim(extent[2],extent[3])
-ax.set_title('Communities Before Optimization')
+extent=[-2000, 2000, -1200, 2800]
+model.plot_communities(extent, cdict, title='Communities Before Refinement')
     
-
-# histogram of the economic data 
-#TODO, delete this initial state
-fig2, ax2 = plt.subplots()
-num_bins = model.InputData.Socioeconomic_data.shape[0]
-SES_append = np.append(model.InputData.Socioeconomic_data, model.Communities.Socioeconomic_data)
-bin_edges = np.linspace(np.min(SES_append), np.max(SES_append), num_bins+1)
-
-n, bins, patches = ax2.hist(model.InputData.Socioeconomic_data.numpy(), bins=bin_edges, color = 'r',edgecolor = "black",
-                            alpha=0.3, label='Initial neighbourhoods', density=True)
-n, bins, patches = ax2.hist(SES_initial, bins=bin_edges, color = 'orange',edgecolor = "grey",
-                                                        alpha=0.4, label='Initial communities', density=True)
-
-ax2.legend(loc='upper right')
-ax2.set_xlabel('SES')
-ax2.set_ylabel('Frequency')
-ax2.set_title('Comparison of the economic data by population')
-plt.show()
-
 
 #%% Train the model for Niterations iterations
 print("OPTIMISING...")
@@ -133,27 +98,10 @@ model.applyMapCommunities()
 print("FINISHED!\n")
 
 
-#%% Polygon Plot    
-# reload colours
-colour = []
-for label in model.labels.numpy():
-    colour.append(cdict[label])
-    
-fig, ax = plt.subplots()   
-for i, polygon in enumerate(model.InputData.GeometryGrid):
-    patch = PolygonPatch(np.array(polygon.exterior.xy).T, facecolor=colour[i], alpha=0.5)
-    ax.add_patch(patch)
-    
-colors = [cdict[i] for i in range(model.Communities.N)]
-ax.scatter(model.Communities.Locations[:,0], model.Communities.Locations[:,1],
-           s=model.Communities.Population/100, c=colors, alpha=.8, ec='black')
+#%% Polygon Plot 
+model.plot_communities(extent, cdict, title='Communities After Refinement')
 
-ax.set_xlim(extent[0],extent[1])
-ax.set_ylim(extent[2],extent[3])
-ax.set_title('Communities After Optimization')
-
-
-#%% Plotting
+#% Plotting
 fig1, ax1 = model.OptimizationData.plotCosts()
 
 # histogram of the economic data 

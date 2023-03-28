@@ -16,7 +16,7 @@ import geopandas as gpd
 import numpy as np
 from geopy import distance
 import tensorflow as tf
-from shapely.geometry import Polygon
+from shapely.geometry import Polygon, MultiLineString, MultiPoint
 
 
 class InputData:
@@ -291,9 +291,13 @@ class InputData:
         self.Coordinates = tf.gather(self.center_coordinates, index)
         self.N = self.Socioeconomic_data.shape[0]
         
+        
     def find_polygon_neighbors(self):
-        try: self.GeometryGrid
-        except: raise Exception("Polygons (GeometryGrid) have not been generated. Use self.polygon2grid().")
+        try:
+            self.GeometryGrid
+        except:
+            raise Exception("Polygons (GeometryGrid) have not been generated. Use self.polygon2grid().")
+        
         num_polygons = len(self.GeometryGrid)
         neighbors = []
         
@@ -302,13 +306,16 @@ class InputData:
             neighbors_i = []
             poly_i = self.GeometryGrid[i]
             
-            # Loop through each other polygon and check if it intersects with poly_i
+            # Loop through each other polygon and check if it shares a common edge with poly_i
             for j in range(num_polygons):
                 if i != j:
                     poly_j = self.GeometryGrid[j]
                     
                     if poly_i.intersects(poly_j):
-                        neighbors_i.append(j)
+                        if poly_i.touches(poly_j) and (
+                                isinstance(poly_i.boundary.intersection(poly_j.boundary), MultiLineString)
+                                or isinstance(poly_i.boundary.intersection(poly_j.boundary), MultiPoint)):
+                            neighbors_i.append(j)
             
             neighbors.append(neighbors_i)
         

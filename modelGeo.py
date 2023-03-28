@@ -9,7 +9,7 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 import numpy as np
 import random
-import copy 
+from matplotlib.patches import Polygon as PolygonPatch
 
 tf.config.run_functions_eagerly(True)  ### TODO should be False
 plt.close('all')
@@ -95,13 +95,8 @@ class ModelGeo(InputData, tf.keras.Model):
         self.OptimizationData.initialize_popBoundaries(self.avg_pop, population_bounds=[0.8, 1.2])
         
         self.initialize_weights()   
-    '''    
-    @property
-    def labels(self):
-        # define labels as a modulus
-        return tf.math.mod(self.labels_var, self.Communities.N)
-    '''
-    
+        
+        
     @property
     def mapped_Population(self):
         return self(self.InputData.Population)
@@ -226,43 +221,7 @@ class ModelGeo(InputData, tf.keras.Model):
         self.OptimizationData.saveCosts(SES_variance, tf.Variable(0.), cost_popBounds, tf.Variable(0.))
         return self.OptimizationData.totalCost
     
-    '''
-    @tf.function
-    def train(self, temperature=1.2):
-        # Determine the initial cost of the current label assignment
-        current_cost = self.cost_fn()
-        self.OptimizationData.storeCosts() # store the costs to be used later in a plot
-        
-        # Iterate for a fixed number of epochs
-        for iteration in range(self.OptimizationData.N_iterations):
-            # Create a shuffled list of indices
-            indices = list(range(self.labels.shape[0]))
-            random.shuffle(indices)
-            
-            # Iterate over the shuffled indices
-            for i in indices:
-                # Try changing the label value for this element
-                new_label = random.randrange(self.Communities.N)
-                old_labels = tf.identity(self.labels).numpy()
-                new_labels = tf.identity(self.labels).numpy()
-                
-                #if new_label==old_labels[i]: new_label = new_label+1%self.Communities.N
-                new_labels[i] = new_label
-                
-                # Calculate the new cost and determine whether to accept the new label
-                self.labels.assign(new_labels)
-                new_cost = self.cost_fn()
-                delta_cost = new_cost - current_cost
-                if delta_cost < 0 or random.uniform(0, 1) < tf.exp(-delta_cost / temperature):
-                    current_cost = new_cost
-                else:
-                    self.labels.assign(old_labels)
-                
-            # Reduce the temperature at the end of each epoch
-            temperature *= 0.99
-            self.OptimizationData.storeCosts() # store the costs to be used later in a plot
-    '''        
-            
+    
     @tf.function
     def refine(self, Nit, temperature=1.2):
         """
@@ -390,62 +349,7 @@ class ModelGeo(InputData, tf.keras.Model):
     
         # Check if all objects with the same label have been visited
         return len(visited) == len(indices)
-
-         
-        
-    '''  
-    @tf.function
-    def refine(self, Nit, Temperature):
-        
-        if self.GeometryNeighbours is not None: 
-            self.GeometryNeighbours = self.InputData.find_polygon_neighbors()
-            
-        # create the list of neighbours for a label
-        com_Neighbours = []
-        labels = self.labels.numpy()
-        for i in range(self.Communities.N):
-            nghbrs = np.concatenate( self.GeometryNeighbours[ self.labels==i ] )
-            
-            # delete double indices or indices that are in the same group
-            for index in range(len(nghbrs)-1,-1,-1):
-                    if (nghbrs.count(nghbrs[index])>1 or 
-                        nghbrs[index] in np.argwhere(self.labels==i) ):
-                        nghbrs.pop(index)           
-                        
-            com_Neighbours.append(nghbrs)
-            
-        
-        for i in range(Nit):
-            # iterate over the communities and load their current values
-            labels = self.labels.numpy()
-            labelslist = list(range(self.Communities.N))
-            random.shuffle(labelslist)
-            for label in labelslist:
-                label_cost = self.cost_fn()
-                
-                # iterate overthe neigbhours and change a label to see if it improves
-                options = []
-                for neighbour in com_Neighbours[label]:                    
-                    labels[neighbour] = label
-                    neighbour_cost = self.cost_fn(
-                        tf.reduce_sum(self.Map(inputs), axis=1)
-                        )
-
-                    # choose which one move
-                    if neighbour_cost < label_cost:
-                        label_cost = neighbour_cost
-                    else:
-                        # Calculate the probability of accepting a higher-cost move
-                        delta = neighbour_cost - label_cost
-                        prob_accept = tf.exp(-delta / Temperature)
-                        # Accept the move with probability prob_accept
-                        if random.uniform(0, 1) < prob_accept:
-                            label_cost = neighbour_cost
-                        else:
-                            self.labels[label] = label
-        return self.labels
-    '''
-            
+    
     
     @tf.function
     def initialize_weights(self):
@@ -584,6 +488,30 @@ class ModelGeo(InputData, tf.keras.Model):
         self.labels = tf.Variable(labels)   
         self.applyMapCommunities()         
         return self.labels
+    
+    
+    def plot_communities(self, extent, cdict, title='Communities After Optimization'):
+        # Reload colors
+        colour = []
+        for label in self.labels.numpy():
+            colour.append(cdict[label])
+    
+        # Create plot
+        fig, ax = plt.subplots()   
+        for i, polygon in enumerate(self.InputData.GeometryGrid):
+            patch = PolygonPatch(np.array(polygon.exterior.xy).T, facecolor=colour[i], alpha=0.5)
+            ax.add_patch(patch)
+    
+        colors = [cdict[i] for i in range(self.Communities.N)]
+        x, y = np.meshgrid(extent[1]*12/16, np.linspace(extent[2]+(extent[3]-extent[2])*2/4,
+                                                      extent[2]+(extent[3]-extent[2])*15/16, self.Communities.N))
+        ax.scatter(x, y, s=self.Communities.Population/100, c=colors, alpha=.8, ec='black')
+        for i, txt in enumerate(np.round(self.Communities.Socioeconomic_data.numpy(), 3)):
+            ax.annotate(txt, (x[i]+80, y[i]-80), fontsize=10)
+    
+        ax.set_xlim(extent[0],extent[1])
+        ax.set_ylim(extent[2],extent[3])
+        ax.set_title(title)
     
     
     @tf.function
