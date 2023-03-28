@@ -86,8 +86,8 @@ class ModelGeo(InputData, tf.keras.Model):
         self.initialize_labels()
         
         # initialise weights
-        self.OptimizationData = OptimizationData(weights=[10,1,5,10], N_iterations=N_iterations,
-                                                 LN=[1,2,1,1], optimizer=optimizer)
+        self.OptimizationData = OptimizationData(weights=[10,1,20,10], N_iterations=N_iterations,
+                                                 LN=[1,2,2,1], optimizer=optimizer)
         
         # Initialize population parameters
         self.tot_pop = tf.reduce_sum(self.InputData.Population)
@@ -265,6 +265,36 @@ class ModelGeo(InputData, tf.keras.Model):
             
     @tf.function
     def refine(self, Nit, temperature=1.2):
+        """
+        Refines a labeling of a set of points using the Potts model, minimizing a cost function.
+    
+        Parameters
+        ----------
+        Nit : int
+            The number of iterations to run the refinement algorithm.
+        temperature : float, optional
+            The temperature parameter of the Potts model, controlling the degree of smoothing.
+            The default value is 1.2.
+    
+        Returns
+        -------
+        tf.Tensor
+            A tensor of shape (N,), where N is the number of points in the set. The tensor
+            contains the updated labels for each point, after the refinement algorithm.
+    
+        Description
+        -----------
+        This method refines a labeling of a set of N points using the Potts model. The
+        algorithm proceeds by iteratively updating the label of each point, one at a time,
+        while keeping the labels of all other points fixed. The goal of the refinement 
+        algorithm is to find a labeling that minimizes the cost function. The algorithm 
+        is run for a fixed number of iterations, specified by the Nit parameter. At each
+        iteration, the temperature parameter is decreased by a factor of 0.99, to gradually
+        reduce the smoothing and focus the algorithm on finding more precise solutions.
+        The cost function used by the algorithm is specified by the cost_fn method of the
+        self object. During the algorithm, the cost of each labeling is stored in the
+        OptimizationData object associated with the self object.
+        """
         
         # load neigbhours
         if self.GeometryNeighbours is not None: 
@@ -288,8 +318,13 @@ class ModelGeo(InputData, tf.keras.Model):
                         self.labels[neighbour] not in labellist_tried):
                         
                         self.labels[label].assign(self.labels[neighbour])
-                        labellist_tried.append(self.labels[label].numpy())
+                        labellist_tried.append(self.labels[label].numpy())                            
                         neighbour_cost = self.cost_fn()
+                        
+                        # if the new labeling breaks the communities in two, don't do this
+                        if not self.check_connected(label_old):
+                            self.labels[label].assign(label_old)
+                            break
                         
                         # choose to accept or reject
                         if neighbour_cost < label_cost:
@@ -314,6 +349,48 @@ class ModelGeo(InputData, tf.keras.Model):
                 
             temperature *= 0.99
         return self.labels
+    
+    
+    def check_connected(self, label):
+        """
+        Check if all objects with the same label are connected via Depth First Search (DFS).
+        
+        The algorithm maintains a stack to keep track of the nodes that still need to be
+        explored. When a node is visited, its adjacent nodes are added to the stack, and 
+        the algorithm continues exploring the next node on the stack. This process continues
+        until all reachable nodes have been visited, or until a goal node has been found.
+    
+        Parameters
+        ----------
+        label : int
+            The label to check for connectivity.
+    
+        Returns
+        -------
+        bool
+            True if all objects with the same label are connected, False otherwise.
+        """
+        # Get indices of objects with given label
+        indices = tf.where(tf.equal(self.labels, label))
+    
+        # Initialize set of visited objects and stack for DFS
+        visited = set()
+        stack = [tuple(indices[0].numpy())]
+    
+        # Do DFS to visit all objects with the same label
+        while stack:
+            i = stack.pop()
+            if i not in visited:
+                visited.add(i)
+                # Add unvisited neighbors to stack
+                neighbors = self.GeometryNeighbours[i]
+                for ni in neighbors:
+                    if ni not in visited and self.labels[ni] == label:
+                        stack.append((ni,))
+    
+        # Check if all objects with the same label have been visited
+        return len(visited) == len(indices)
+
          
         
     '''  
