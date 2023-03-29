@@ -24,3 +24,10 @@ MODEL ARCHITECTURE:
 	- Files to run:
 		- load_inputData: To load the input data and save it via Pickle
 		- mainGeo: To run the model
+
+
+Current state of the model:
+
+I have coded in such a way that it now creates a starting point which has blobs that define the communities. I starts by merely focussing on the socioeconomic value. In the top right we see the size of the point for how big it's population is and the number behind it is the SES value of the community
+
+![01_CommunitiesBeforeRefinement](Output/01_CommunitiesBeforeRefinement "Communities Before Refinement")
