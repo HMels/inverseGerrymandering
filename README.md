@@ -1,4 +1,4 @@
-# Dataset
+# inverseGerrymandering
 This program is dependent on the next modules:
 - python==3.9
 - tensorflow== 2.11.0
