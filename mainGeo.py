@@ -4,15 +4,13 @@ Created on Wed Mar  8 19:41:17 2023
 
 @author: Mels
 """
-
+import pickle
 import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
-from geopy.geocoders import Nominatim
 
-# import modules from file
-from inputData import InputData
 from modelGeo import ModelGeo
+
 
 def create_color_dict(N):
     """
@@ -36,28 +34,9 @@ def create_color_dict(N):
     return colors_dict
 
 
-
-#%% Load data
-if True: # loading the geoData takes too long so this way I only have to do it once
-    # Source: https://opendata.cbs.nl/statline/#/CBS/nl/dataset/85163NED/table?ts=1669130926836
-    # Download the file named "CSV met statistische symbolen"
-    inputData = InputData("Data/SES_WOA_scores_per_wijk_en_buurt_08032023_175111.csv")
-    
-    
-    # Source: https://www.atlasleefomgeving.nl/kaarten
-    inputData.load_geo_data('Data/wijkenbuurten_2022_v1.GPKG')
-    inputData.buurt_filter(loadGeometry=True)
-    
-else: 
-    inputData.reload_path("Data/SES_WOA_scores_per_wijk_en_buurt_08032023_175111.csv")
-    inputData.buurt_filter(loadGeometry=True)
-
-
-#%% Translate locations to a grid
-geolocator = Nominatim(user_agent="Dataset")
-latlon0 = [ geolocator.geocode("Amsterdam").latitude , geolocator.geocode("Amsterdam").longitude ]
-inputData.map2grid(latlon0)
-inputData.polygon2grid(latlon0)
+#%% load inputData
+with open("inputData.pickle", "rb") as f:
+    inputData = pickle.load(f)
 
 
 #%% Define model
@@ -88,7 +67,7 @@ model.print_summary()
 #cdict = {0: 'c', 1: 'red', 2: 'blue', 3: 'green', 4: 'yellow', 5:}
 cdict = create_color_dict(N_communities)
 extent=[-2000, 2000, -1200, 2800]
-model.plot_communities(extent, cdict, title='Communities Before Refinement')
+fig01, ax01 = model.plot_communities(extent, cdict, title='Communities Before Refinement')
     
 
 #%% Train the model for Niterations iterations
@@ -99,7 +78,7 @@ print("FINISHED!\n")
 
 
 #%% Polygon Plot 
-model.plot_communities(extent, cdict, title='Communities After Refinement')
+fig02, ax02 = model.plot_communities(extent, cdict, title='Communities After Refinement')
 
 #% Plotting
 fig1, ax1 = model.OptimizationData.plotCosts()
@@ -111,11 +90,11 @@ SES_append = np.append(model.InputData.Socioeconomic_data, model.Communities.Soc
 bin_edges = np.linspace(np.min(SES_append), np.max(SES_append), num_bins+1)
 
 n, bins, patches = ax2.hist(model.InputData.Socioeconomic_data.numpy(), bins=bin_edges, color = 'r',edgecolor = "black",
-                            alpha=0.3, label='Initial neighbourhoods', density=True)
+                            alpha=0.3, label='Initial Neighbourhoods', density=True)
 n, bins, patches = ax2.hist(SES_initial, bins=bin_edges, color = 'orange',edgecolor = "grey",
-                                                        alpha=0.4, label='Initial communities', density=True)
+                                                        alpha=0.3, label='Initial Communities', density=True)
 n, bins, patches = ax2.hist(model.Communities.Socioeconomic_data.numpy(), bins=bin_edges-bin_edges[0]/2, color = 'g',
-                            alpha=0.5, label='Mapped', density=True)
+                            alpha=0.5, label='Refined Communities', density=True)
 
 ax2.legend(loc='upper right')
 ax2.set_xlabel('SES')
@@ -125,3 +104,11 @@ plt.show()
 
 print("OPTIMISED VALUES: ")
 model.print_summary()
+
+
+#%% save all plots
+if True:
+    fig01.savefig(fname="Output/01_CommunitiesBeforeRefinement")
+    fig02.savefig(fname="Output/02_CommunitiesAfterRefinement")
+    fig1.savefig(fname="Output/03_CostOtimizationPlot")
+    fig2.savefig(fname="Output/04_SESbarplot")

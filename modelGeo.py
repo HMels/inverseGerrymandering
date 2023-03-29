@@ -86,8 +86,8 @@ class ModelGeo(InputData, tf.keras.Model):
         self.initialize_labels()
         
         # initialise weights
-        self.OptimizationData = OptimizationData(weights=[10,1,20,10], N_iterations=N_iterations,
-                                                 LN=[1,2,2,1], optimizer=optimizer)
+        self.OptimizationData = OptimizationData(weights=[10,20,3], N_iterations=N_iterations,
+                                                 LN=[1,2,2], optimizer=optimizer)
         
         # Initialize population parameters
         self.tot_pop = tf.reduce_sum(self.InputData.Population)
@@ -99,21 +99,30 @@ class ModelGeo(InputData, tf.keras.Model):
         
     @property
     def mapped_Population(self):
+        # The population per Community
         return self(self.InputData.Population)
     
     @property
     def mapped_Socioeconomic_data(self):
+        # the Socioeconomic data per Community
         return self(self.InputData.Socioeconomic_population)/self.mapped_Population
     
     @property
     def population_Map(self):
+        # the Map (as Communities.N x InputData.N Tensor) filled with populations
         return tf.round(self.Map(self.InputData.Population))
     
+    @property
+    def neighbourhood_Map(self):
+        # the Map (as Communities.N x InputData.N Tensor) filled with ones to map the neighbourhoods
+        return self.Map(tf.ones(self.InputData.N))
     
     @tf.function
     def applyMapCommunities(self):
         self.Communities.Population = self.mapped_Population
         self.Communities.Socioeconomic_data = self.mapped_Socioeconomic_data
+        
+    
         
         
     @tf.function
@@ -214,16 +223,15 @@ class ModelGeo(InputData, tf.keras.Model):
                                               tf.abs(self.mapped_Population-self.OptimizationData.popBoundLow), 0)) / self.tot_pop 
     
         # Add regularization term based on distances
-        #pop_distances = tf.multiply(self.population_Map, self.distances)
-        #cost_distance = tf.reduce_sum(pop_distances / self.tot_pop / self.max_distance)
+        cost_distance = self.cost_distances()
         
         # Input costs into the OptimizationData model and save them
-        self.OptimizationData.saveCosts(SES_variance, tf.Variable(0.), cost_popBounds, tf.Variable(0.))
+        self.OptimizationData.saveCosts(SES_variance, cost_popBounds, cost_distance)
         return self.OptimizationData.totalCost
     
     
     @tf.function
-    def refine(self, Nit, temperature=1.2):
+    def refine(self, Nit, temperature=0):
         """
         Refines a labeling of a set of points using the Potts model, minimizing a cost function.
     
@@ -358,9 +366,29 @@ class ModelGeo(InputData, tf.keras.Model):
         self.OptimizationData.weight_SESvariance = self.OptimizationData.weight_SESvariance / ( 
             tf.math.reduce_variance( self(self.InputData.Socioeconomic_population) )
             )
-        self.OptimizationData.weight_distance = self.OptimizationData.weight_distance / ( 
-            tf.reduce_sum(tf.multiply(self.population_Map, self.distances) / self.tot_pop / self.max_distance)
-            )  
+        self.OptimizationData.weight_distance = self.OptimizationData.weight_distance / self.cost_distances()
+        
+        
+    @tf.function
+    def cost_distances(self):
+        '''
+        calculates the costs of distances by averaging out all the distances per Community
+
+        Raises
+        ------
+        Exception
+            If the distances have not been initialised yet.
+
+        Returns
+        -------
+        TensorFlow.float32
+            The costs of the current distances.
+
+        '''
+        try: self.distances
+        except: raise Exception("Distances have not been initialised yet!")
+        
+        return tf.reduce_sum(tf.reduce_mean( self.distances * self.neighbourhood_Map , axis=1))
         
         
     @tf.function
@@ -512,6 +540,7 @@ class ModelGeo(InputData, tf.keras.Model):
         ax.set_xlim(extent[0],extent[1])
         ax.set_ylim(extent[2],extent[3])
         ax.set_title(title)
+        return fig, ax
     
     
     @tf.function
