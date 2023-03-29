@@ -11,6 +11,7 @@ https://www.atlasleefomgeving.nl/kaarten
 	select algemene kaarten: Wijk- en buurtinformatie 2022
 	
 MODEL ARCHITECTURE:
+
 	- Folders:
 		- Data: Contains all the data + sources. Check the corresponding README file for more info.
 		- Output: The figures printed when running the model in the current position.
