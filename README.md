@@ -9,3 +9,17 @@ This program is dependent on the next modules:
 For the model to work, you should download the next file that is way too big from:
 https://www.atlasleefomgeving.nl/kaarten
 	select algemene kaarten: Wijk- en buurtinformatie 2022
+	
+MODEL ARCHITECTURE:
+	- Folders:
+		- Data: Contains all the data + sources. Check the corresponding README file for more info.
+		- Output: The figures printed when running the model in the current position.
+		
+	- Classes:
+		- inputData: Class in which the Data is loaded
+		- communities: Class which will form the newly made Communities
+		- optimizationData: Class in which the important information during optimization is stored
+		- modelGeo: Class which runs the algorithm that will make Communities out of InputData
+	- Files to run:
+		- load_inputData: To load the input data and save it via Pickle
+		- mainGeo: To run the model
