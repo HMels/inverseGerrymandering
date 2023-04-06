@@ -86,8 +86,8 @@ class ModelGeo(InputData, tf.keras.Model):
         self.initialize_labels()
         
         # initialise weights
-        self.OptimizationData = OptimizationData(weights=[10,20,3], N_iterations=N_iterations,
-                                                 LN=[1,2,2], optimizer=optimizer)
+        self.OptimizationData = OptimizationData(weights=[8,20,6,6], N_iterations=N_iterations,
+                                                 LN=[1,2,2,2], optimizer=optimizer)
         
         # Initialize population parameters
         self.tot_pop = tf.reduce_sum(self.InputData.Population)
@@ -96,7 +96,17 @@ class ModelGeo(InputData, tf.keras.Model):
         
         self.initialize_weights()   
         
+    
+    @property
+    def mapped_Education_population(self):
+        # The education level per Community
+        return self(self.InputData.Education_population)  
         
+    @property
+    def mapped_Education(self):
+        # The education level per Community
+        return self(self.InputData.Education)    
+    
     @property
     def mapped_Population(self):
         # The population per Community
@@ -122,7 +132,6 @@ class ModelGeo(InputData, tf.keras.Model):
         self.Communities.Population = self.mapped_Population
         self.Communities.Socioeconomic_data = self.mapped_Socioeconomic_data
         
-    
         
         
     @tf.function
@@ -150,7 +159,8 @@ class ModelGeo(InputData, tf.keras.Model):
                 raise Exception("inputs should have the same lenght as self.labels!")
             indices = tf.transpose(tf.stack([self.labels, tf.range(self.InputData.N)]))
             if len(tf.squeeze(inputs).shape)==2:
-                return tf.scatter_nd(indices, tf.squeeze(inputs), shape = (self.Communities.N, self.InputData.N, 2))
+                return tf.scatter_nd(indices, tf.squeeze(inputs), shape =
+                                     (self.Communities.N, self.InputData.N, tf.squeeze(inputs).shape[1]))
             else:
                 return tf.scatter_nd(indices, tf.squeeze(inputs), shape = (self.Communities.N, self.InputData.N))
             
@@ -225,8 +235,13 @@ class ModelGeo(InputData, tf.keras.Model):
         # Add regularization term based on distances
         cost_distance = self.cost_distances()
         
+        # Add varience in education mapped_Education_population
+        education_variance = tf.math.reduce_mean(
+            tf.math.reduce_variance( self.mapped_Education_population, axis=0 )
+            )
+        
         # Input costs into the OptimizationData model and save them
-        self.OptimizationData.saveCosts(SES_variance, cost_popBounds, cost_distance)
+        self.OptimizationData.saveCosts(SES_variance, cost_popBounds, cost_distance, education_variance)
         return self.OptimizationData.totalCost
     
     
@@ -367,6 +382,9 @@ class ModelGeo(InputData, tf.keras.Model):
             tf.math.reduce_variance( self(self.InputData.Socioeconomic_population) )
             )
         self.OptimizationData.weight_distance = self.OptimizationData.weight_distance / self.cost_distances()
+        self.OptimizationData.weight_education = self.OptimizationData.weight_education / tf.math.reduce_mean(
+            tf.math.reduce_variance( self.mapped_Education_population, axis=0 )
+            )
         
         
     @tf.function

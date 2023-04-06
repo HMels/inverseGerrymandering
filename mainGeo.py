@@ -60,6 +60,7 @@ model = ModelGeo(inputData, N_communities, N_iterations, optimizer)
 
 #%% plot initial state
 SES_initial = model.mapped_Socioeconomic_data.numpy()
+Education_initial = model.mapped_Education_population.numpy()
 
 print("INITIAL VALUES: ")
 model.print_summary()
@@ -83,12 +84,15 @@ fig02, ax02 = model.plot_communities(extent, cdict, title='Communities After Ref
 #% Plotting
 fig1, ax1 = model.OptimizationData.plotCosts()
 
-# histogram of the economic data 
+
+############ histogram of the economic data 
 fig2, ax2 = plt.subplots()
 num_bins = model.InputData.Socioeconomic_data.shape[0]
 SES_append = np.append(model.InputData.Socioeconomic_data, model.Communities.Socioeconomic_data)
 bin_edges = np.linspace(np.min(SES_append), np.max(SES_append), num_bins+1)
 
+
+############ plot the SES value
 n, bins, patches = ax2.hist(model.InputData.Socioeconomic_data.numpy(), bins=bin_edges, color = 'r',edgecolor = "black",
                             alpha=0.3, label='Initial Neighbourhoods', density=True)
 n, bins, patches = ax2.hist(SES_initial, bins=bin_edges, color = 'orange',edgecolor = "grey",
@@ -102,6 +106,35 @@ ax2.set_ylabel('Frequency')
 ax2.set_title('Comparison of the economic data by population')
 plt.show()
 
+
+#%% histogram of the education
+fig3, ax3 = plt.subplots(1, 3, figsize=(12, 4))
+num_bins = model.InputData.Education.shape[0]
+edu_append = np.append(model.InputData.Education_population, model.mapped_Education_population)
+bin_edges = np.linspace(min(edu_append), max(edu_append), num_bins+1)
+
+# plot bar plots for each column of InputData.Education
+for i in range(3):
+    n, bins, patches = ax3[i].hist(model.InputData.Education_population[:, i], bins=bin_edges, color='r', edgecolor='black',
+                                   alpha=.3, label='Initial Neighbourhoods', density=True)
+    n, bins, patches = ax3[i].hist(Education_initial[:, i], bins=bin_edges, color='orange', edgecolor='grey',
+                                   alpha=0.3, label='Initial Communities', density=True)
+    n, bins, patches = ax3[i].hist(model.mapped_Education_population[:, i], bins=bin_edges-bin_edges[0]/2, color='g',
+                                   alpha=0.5, label='Refined Communities', density=True)
+
+
+# set overall title for the figure
+ax3[2].legend(loc='upper right')
+ax3[1].set_xlabel('Education Level')
+ax3[0].set_ylabel('Frequency')
+ax3[0].set_title('Low Level')
+ax3[1].set_title('Medium Level')
+ax3[2].set_title('High Level')
+ax3[1].get_yaxis().set_visible(False)
+ax3[2].get_yaxis().set_visible(False)
+fig3.suptitle('Comparison of Educational Levels by Population')
+
+
 print("OPTIMISED VALUES: ")
 model.print_summary()
 
@@ -113,3 +146,4 @@ if True:
     fig1.savefig(fname="Output/03_CostOtimizationPlot")
 
     fig2.savefig(fname="Output/04_SESbarplot")
+    fig3.savefig(fname="Output/04_Educationbarplot")

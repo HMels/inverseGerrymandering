@@ -57,44 +57,60 @@ class InputData:
         self.Population = tf.Variable(np.array(data[:,3].tolist()).astype(np.float32)[:],
                                       trainable=False, dtype=tf.float32) # Number of households per neighbourhood
         self.Education = tf.transpose(tf.Variable([data[:,4], data[:,5], data[:,6]],
-                                                  trainable=False, dtype=tf.float32)) # education levels Low, Medium, High
+                                                  trainable=False, dtype=tf.float32))/100 # education levels Low, Medium, High
         self.Socioeconomic_data = tf.Variable(np.array(data[:,7].tolist()).astype(np.float32)[:],
                                               trainable=False, dtype=tf.float32) # Socio-economic value of the region
-        self.Locations = None      # locations yet to be 
+        
+        # data yet to be loaded
+        self.Locations = None      
+        self.GeometryGrid = None
+        self.Geometry = None
+        
         self.N = self.Socioeconomic_data.shape[0]
+        
+        # filter buurtcodes that don't start with BU
+        indices = []
+        for i, codes in enumerate(self.neighbourhood_codes):
+            if codes[:2]=="BU":
+                indices.append(i)
+        self.gather(indices)
         
         
     @property
     def Socioeconomic_population(self):
-        '''
-        Returns
-        -------
-        tf.float32
-            The socioeconomic data multiplied by the population to get the actual socioeconomic value.
-
-        '''
+        # returns a tf.float32 
+        # The socioeconomic data multiplied by the population to get the actual socioeconomic value.
         return self.Socioeconomic_data * self.Population
+    
+    
+    @property
+    def Education_population(self):
+        # returns a tf.float32 
+        # The Education data multiplied by the population to get the actual socioeconomic value.
+        return tf.multiply(self.Education, tf.expand_dims(self.Population, axis=1))
+        
+    
+    
+    def gather(self, indices):
+        '''
+        Gathers the indices inputted for all properties 
+        '''
+        if len(indices)==0: raise Exception("No indices inputted to be gathered")
+        
+        neighbourhoods=[]
+        neighbourhood_codes=[]
+        for i in range(len(self.neighbourhoods)):
+            if i in indices:
+                neighbourhoods.append(self.neighbourhoods[i])
+                neighbourhood_codes.append(self.neighbourhood_codes[i])
+        self.neighbourhoods = neighbourhoods
+        self.neighbourhood_codes = neighbourhood_codes
+        
+        self.Population = tf.gather(self.Population, indices)
+        self.Education = tf.gather(self.Education, indices)
+        self.Socioeconomic_data = tf.gather(self.Socioeconomic_data, indices)        
         
         
-    def reload_path(self, path):
-        # Load data from CSV file using pandas
-        data = pd.read_csv(path, delimiter=';', quotechar='"', na_values='       .')
-        
-        # Replace '       .' with NaN in columns 3 and 4 and delete these rows as they don't have data data
-        data = data.replace('       .', float('nan'))
-        data.dropna(inplace=True)
-        data = data.values
-
-        # Extract relevant variables and store as class variables
-        self.neighbourhoods = np.array(data[:,1])  # neighbourhood names
-        self.Socioeconomic_data = tf.Variable(np.array(data[:,3].tolist()).astype(np.float32)[:],
-                                              trainable=False, dtype=tf.float32) # Socio-economic value of the region
-        self.Population = tf.Variable(np.array(data[:,2].tolist()).astype(np.float32)[:],
-                                           trainable=False, dtype=tf.float32) # Number of households per neighbourhood
-        self.Locations = None      # locations yet to be 
-        self.N = self.Socioeconomic_data.shape[0]
-        
-    '''
     def load_miscData(self, path):
         """
         Loads the miscalenous data from the file that can be downloaded from  
@@ -107,23 +123,31 @@ class InputData:
 
         """
         # read in the file using pandas
-        df = pd.read_excel(path)
+        dtypes = {'GM_CODE': str, 'WK_CODE': str, 'BU_CODE': str}
+        df = pd.read_excel(path, dtype=dtypes)
         
-        # select only the rows that have neighbourhoods from the list
-        df = df[df['GWB_NAAM11_60pos'].isin(self.neighbourhoods)]
+        # iterate over the neighbourhood codes list and extract the rows corresponding to each neighbourhood
+        dfs = []
+        for code in self.neighbourhood_codes:
+            gm_code = code[2:6]
+            wk_code = code[6:8]
+            bu_code = code[8:]
+            df_neighbourhood = df[(df['RECS'] == 'Buurt') &
+                                  (df['GM_CODE'] == gm_code) &
+                                  (df['WK_CODE'] == wk_code) &
+                                  (df['BU_CODE'] == bu_code)]
+            if len(df_neighbourhood)==0:
+                print(code,"Not found")
+            dfs.append(df_neighbourhood)
         
-        # reorder the rows based on the order of neighbourhoods in the list
-        df = df.set_index('GWB_NAAM11_60pos')
-        df = df.loc[self.neighbourhoods]
-        
-        # select the columns you're interested in
-        pop_sex = df[['AANT_MAN', 'AANT_VROUW']]
-        pop_age = df[['P_00_14_JR', 'P_15_24_JR', 'P_25_44_JR', 'P_45_64_JR', 'P_65_EO_JR']]
-        
+        # concatenate the dataframes and select the columns you're interested in
+        df_final = pd.concat(dfs)
+        pop_sex = df_final[['AANT_MAN', 'AANT_VROUW']]
+        pop_age = df_final[['P_00_14_JR', 'P_15_24_JR', 'P_25_44_JR', 'P_45_64_JR', 'P_65_EO_JR']]
+
         # convert the selected columns to arrays
-        pop_sex = tf.Variable(pop_sex.to_numpy(), dtype=tf.int32, trainable=False)
-        pop_age = tf.Variable(pop_age.to_numpy(), dtype=tf.int32, trainable=False)
-    '''   
+        self.pop_sex = tf.Variable(pop_sex.to_numpy(), dtype=tf.int32, trainable=False)
+        self.pop_age = tf.Variable(pop_age.to_numpy(), dtype=tf.int32, trainable=False)   
         
     
     def load_geo_data(self, filename):
@@ -219,11 +243,11 @@ class InputData:
         """
         
         MappedPolygons = []
-        for Poly in self.Geometry:
-            polygon = Poly.values
+        for polygon in self.Geometry:
+            #polygon = Poly.values
             # Loop through all coordinates and store their latitude and longitude in a grid
-            MappedCoordinates = np.zeros((len(polygon.exterior[0].coords), 2), dtype=np.float32)
-            for i, coord in enumerate(polygon.exterior[0].coords):
+            MappedCoordinates = np.zeros((len(polygon.exterior.coords), 2), dtype=np.float32)
+            for i, coord in enumerate(polygon.exterior.coords):
                 loc = np.zeros(2, dtype=np.float32)
                 loc[0] = distance.distance(latlon0, [coord[1], latlon0[1]]).m
                 loc[0] = loc[0] if (latlon0[0] < coord[1]) else -loc[0]
@@ -237,14 +261,12 @@ class InputData:
 
 
 
-    def buurt_filter(self, loadGeometry=True, devmode=False):
+    def buurt_filter(self, devmode=False):
         """
         Filters the socio-economic data based on whether the neighbourhoods are present in the geopandas data and 
         stores the relevant data in class variables.
         
         Args:
-            loadGeometry: bool
-                boolean that allows geometry to be loaded. Default is True.
             devmode: bool
                 boolean that allows for error messages when loading buurten. Default is False.
         
@@ -273,62 +295,28 @@ class InputData:
             present in the geopandas data. The first column represents the longitude of the center of each polygon, while 
             the second column represents its latitude.
         """
-        
         ## Load the shapes from buurten gdf
-        Geometry=[]
         if devmode: print("WARNING: GDF CAN ONLY FIND BUURTEN AND NOT WIJKEN OR CITIES. THEREFORE, A LOT OF DATA WILL BE MISSING:")
-        if loadGeometry:
-            truefalse=False # used to check if the loc is found in the gdf file
-            for loc in self.neighbourhoods:
-                for buurt in range(self.gdf.buurtnaam.shape[0]):
-                    try:
-                        if self.gdf.buurtnaam[buurt][0]==loc:
-                            truefalse=True
-                            Geometry.append(self.gdf.geometry[buurt])
-                            break
-                    except:
-                        break
-
-                if devmode and not truefalse: # check if wijk was not found
-                    print("1. Warning:",loc,"has not been found in gdf data. Check if instance should have been found")
-    
-            self.Geometry = Geometry
         
-        
-        # filter data for info that exists as a buurt
-        i=0
-        index=[]
-        Socioeconomic_data=[]
-        Population=[]
-        neighbourhoods=[]
-        for loc in self.neighbourhoods:
-            truefalse=False # used to check if the loc is found in the gdf file
-            j = 0
-            for buurt in self.gdf.buurtnaam:
-                try:
-                    if buurt==loc:
-                        truefalse=True
-                        index.append(j)
-                        Socioeconomic_data.append(self.Socioeconomic_data[i])
-                        Population.append(self.Population[i])
-                        neighbourhoods.append(self.neighbourhoods[i])
-                        break
-                    else:
-                        j+=1
-                except:
-                    break
-
-            if devmode and not truefalse: # check if wijk was not found
-                print("2. Warning:",loc,"has not been found in gdf data. Check if instance should have been found")
-    
-            i+=1
-                
+        Geometry=[]
+        indices=[]
+        Coordinates=[]
+        geometry_gdf = self.gdf.geometry.tolist()
+        truefalse=False # used to check if the loc is found in the gdf file
+        for i, code in enumerate(self.neighbourhood_codes):
+            index = tf.where(self.gdf.buurtcode == code).numpy()[0][0]
+            Geometry.append(geometry_gdf[index])
+            Coordinates.append(self.center_coordinates[index])
+            indices.append(i)
+            truefalse=True
             
-        # save all in arrays
-        self.Socioeconomic_data = tf.Variable(Socioeconomic_data, trainable=False, dtype=tf.float32)
-        self.Population = tf.Variable(Population, trainable=False, dtype=tf.float32)
-        self.neighbourhoods = np.array(neighbourhoods)
-        self.Coordinates = tf.gather(self.center_coordinates, index)
+            # error message
+            if devmode and not truefalse:
+                print("Warning:",self.neighbourhoods[i],"has not been found in gdf data. Check if instance should have been found")
+
+        self.gather(indices)
+        self.Geometry = Geometry
+        self.Coordinates = tf.Variable(Coordinates, trainable=False, dtype=tf.float32)
         self.N = self.Socioeconomic_data.shape[0]
         
         
