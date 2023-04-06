@@ -111,4 +111,5 @@ if True:
     fig01.savefig(fname="Output/01_CommunitiesBeforeRefinement")
     fig02.savefig(fname="Output/02_CommunitiesAfterRefinement")
     fig1.savefig(fname="Output/03_CostOtimizationPlot")
+
     fig2.savefig(fname="Output/04_SESbarplot")

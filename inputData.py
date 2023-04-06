@@ -53,10 +53,13 @@ class InputData:
 
         # Extract relevant variables and store as class variables
         self.neighbourhoods = data[:,1]  # neighbourhood names
-        self.Socioeconomic_data = tf.Variable(np.array(data[:,3].tolist()).astype(np.float32)[:],
+        self.neighbourhood_codes = data[:,2]  # neighbourhood codes
+        self.Population = tf.Variable(np.array(data[:,3].tolist()).astype(np.float32)[:],
+                                      trainable=False, dtype=tf.float32) # Number of households per neighbourhood
+        self.Education = tf.transpose(tf.Variable([data[:,4], data[:,5], data[:,6]],
+                                                  trainable=False, dtype=tf.float32)) # education levels Low, Medium, High
+        self.Socioeconomic_data = tf.Variable(np.array(data[:,7].tolist()).astype(np.float32)[:],
                                               trainable=False, dtype=tf.float32) # Socio-economic value of the region
-        self.Population = tf.Variable(np.array(data[:,2].tolist()).astype(np.float32)[:],
-                                           trainable=False, dtype=tf.float32) # Number of households per neighbourhood
         self.Locations = None      # locations yet to be 
         self.N = self.Socioeconomic_data.shape[0]
         
@@ -90,6 +93,37 @@ class InputData:
                                            trainable=False, dtype=tf.float32) # Number of households per neighbourhood
         self.Locations = None      # locations yet to be 
         self.N = self.Socioeconomic_data.shape[0]
+        
+    '''
+    def load_miscData(self, path):
+        """
+        Loads the miscalenous data from the file that can be downloaded from  
+        https://www.cbs.nl/nl-nl/maatwerk/2011/48/kerncijfers-wijken-en-buurten-2011
+
+        Parameters
+        ----------
+        path : str
+            The path from which to load the file.
+
+        """
+        # read in the file using pandas
+        df = pd.read_excel(path)
+        
+        # select only the rows that have neighbourhoods from the list
+        df = df[df['GWB_NAAM11_60pos'].isin(self.neighbourhoods)]
+        
+        # reorder the rows based on the order of neighbourhoods in the list
+        df = df.set_index('GWB_NAAM11_60pos')
+        df = df.loc[self.neighbourhoods]
+        
+        # select the columns you're interested in
+        pop_sex = df[['AANT_MAN', 'AANT_VROUW']]
+        pop_age = df[['P_00_14_JR', 'P_15_24_JR', 'P_25_44_JR', 'P_45_64_JR', 'P_65_EO_JR']]
+        
+        # convert the selected columns to arrays
+        pop_sex = tf.Variable(pop_sex.to_numpy(), dtype=tf.int32, trainable=False)
+        pop_age = tf.Variable(pop_age.to_numpy(), dtype=tf.int32, trainable=False)
+    '''   
         
     
     def load_geo_data(self, filename):
@@ -202,15 +236,17 @@ class InputData:
         self.GeometryGrid = MappedPolygons
 
 
-    
 
-    def buurt_filter(self, loadGeometry=False):
+    def buurt_filter(self, loadGeometry=True, devmode=False):
         """
         Filters the socio-economic data based on whether the neighbourhoods are present in the geopandas data and 
         stores the relevant data in class variables.
         
         Args:
-            None
+            loadGeometry: bool
+                boolean that allows geometry to be loaded. Default is True.
+            devmode: bool
+                boolean that allows for error messages when loading buurten. Default is False.
         
         Returns:
             None
@@ -238,29 +274,33 @@ class InputData:
             the second column represents its latitude.
         """
         
-        index=[]
-        Socioeconomic_data=[]
-        Population=[]
-        neighbourhoods=[]
+        ## Load the shapes from buurten gdf
         Geometry=[]
-        i=0
-        print("WARNING: GDF CAN ONLY FIND BUURTEN AND NOT WIJKEN OR CITIES. THEREFORE, A LOT OF DATA WILL BE MISSING:")
+        if devmode: print("WARNING: GDF CAN ONLY FIND BUURTEN AND NOT WIJKEN OR CITIES. THEREFORE, A LOT OF DATA WILL BE MISSING:")
         if loadGeometry:
             truefalse=False # used to check if the loc is found in the gdf file
             for loc in self.neighbourhoods:
                 for buurt in range(self.gdf.buurtnaam.shape[0]):
                     try:
                         if self.gdf.buurtnaam[buurt][0]==loc:
+                            truefalse=True
                             Geometry.append(self.gdf.geometry[buurt])
                             break
                     except:
                         break
 
-            if not truefalse: # check if wijk was not found
-                print("1. Warning:",loc,"has not been found in gdf data. Check if instance should have been found")
+                if devmode and not truefalse: # check if wijk was not found
+                    print("1. Warning:",loc,"has not been found in gdf data. Check if instance should have been found")
     
             self.Geometry = Geometry
         
+        
+        # filter data for info that exists as a buurt
+        i=0
+        index=[]
+        Socioeconomic_data=[]
+        Population=[]
+        neighbourhoods=[]
         for loc in self.neighbourhoods:
             truefalse=False # used to check if the loc is found in the gdf file
             j = 0
@@ -278,10 +318,10 @@ class InputData:
                 except:
                     break
 
-            if not truefalse: # check if wijk was not found
+            if devmode and not truefalse: # check if wijk was not found
                 print("2. Warning:",loc,"has not been found in gdf data. Check if instance should have been found")
     
-                i+=1
+            i+=1
                 
             
         # save all in arrays
