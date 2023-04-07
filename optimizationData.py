@@ -151,8 +151,8 @@ class OptimizationData:
         plt.legend()
         return fig, ax
     
-    def printCosts(self):
-        print("Partial costs:\n   L{} SES variance = {}\n   L{} population bounds = {},\n   L{} distance = {},\n   L{} education = {}\n".format(
+    def printCosts(self, text="Partial costs:"):
+        print(text+"\n   L{} SES variance = {}\n   L{} population bounds = {},\n   L{} distance = {},\n   L{} education = {}\n".format(
             self.LN[0], self.Cost_SES_variance.numpy(),
             self.LN[1], self.Cost_popBounds.numpy(),
             self.LN[2], self.Cost_distance.numpy(),

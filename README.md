@@ -44,6 +44,10 @@ And the optimization of the educational levels:
 
 ![04_Educationbarplot](/Output/04_Educationbarplot.png "Education barplot")
 
+And the eventual population sizes:
+
+![04_Populationbarplot](/Output/04_Populationbarplot.png "Population barplot")
+
 Important to note is that i added a function that does not allow communities to be cut in two. Making sure that all blobs are connected: 
 
 ![02_CommunitiesAfterRefinement](/Output/02_CommunitiesAfterRefinement.png "Communities After Refinement")

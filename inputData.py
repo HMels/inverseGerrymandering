@@ -57,7 +57,7 @@ class InputData:
         self.Population = tf.Variable(np.array(data[:,3].tolist()).astype(np.float32)[:],
                                       trainable=False, dtype=tf.float32) # Number of households per neighbourhood
         self.Education = tf.transpose(tf.Variable([data[:,4], data[:,5], data[:,6]],
-                                                  trainable=False, dtype=tf.float32))/100 # education levels Low, Medium, High
+                                                  trainable=False, dtype=tf.float32)) # education levels Low, Medium, High
         self.Socioeconomic_data = tf.Variable(np.array(data[:,7].tolist()).astype(np.float32)[:],
                                               trainable=False, dtype=tf.float32) # Socio-economic value of the region
         
@@ -87,7 +87,7 @@ class InputData:
     def Education_population(self):
         # returns a tf.float32 
         # The Education data multiplied by the population to get the actual socioeconomic value.
-        return tf.multiply(self.Education, tf.expand_dims(self.Population, axis=1))
+        return tf.multiply(self.Education/100, tf.expand_dims(self.Population, axis=1))
         
     
     
@@ -347,4 +347,4 @@ class InputData:
             
             neighbors.append(neighbors_i)
         
-        return np.array(neighbors)
+        return np.array(neighbors, dtype=list)
