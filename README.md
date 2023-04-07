@@ -28,7 +28,7 @@ https://www.atlasleefomgeving.nl/kaarten
 
 # Current state of the model:
 
-I have coded in such a way that it now creates a starting point which has blobs that define the communities. I starts by merely focussing on the socioeconomic value. In the top right we see the size of the point for how big it's population is and the number behind it is the SES value of the community:
+I have coded in such a way that it now creates a starting point which has blobs that define the communities. It starts by merely focussing on the socioeconomic value. In the top right we see the size of the point for how big it's population is and the number behind it is the SES value of the community:
 
 ![01_CommunitiesBeforeRefinement](/Output/01_CommunitiesBeforeRefinement.png "Communities Before Refinement")
 
@@ -39,6 +39,10 @@ I also then created the refinement process that works like a territorial war gam
 I used reguralization to improve the population size, such that it is more equally spread than the starting case, the SES value, and the average distance between all buurten in a community to make sure they are defined more closer together:
 
 ![04_SESbarplot](/Output/04_SESbarplot.png "Socio-Economic barplot")
+
+And the optimization of the educational levels:
+
+![04_Educationbarplot](/Output/04_Educationbarplot.png "Education barplot")
 
 Important to note is that i added a function that does not allow communities to be cut in two. Making sure that all blobs are connected: 
 
