@@ -552,11 +552,23 @@ class ModelGeo(InputData, tf.keras.Model):
         return self.labels
     
     
-    def plot_communities(self, extent, cdict, title='Communities After Optimization'):
+    def plot_communities(self,cdict,  extent=None, title='Communities After Optimization'):
         # Reload colors
         colour = []
         for label in self.labels.numpy():
             colour.append(cdict[label])
+            
+        if extent is None:
+            geominx = min(self.InputData.GeometryGrid[0].exterior.xy[0])
+            geominy = max(self.InputData.GeometryGrid[0].exterior.xy[0])
+            geomaxx = min(self.InputData.GeometryGrid[0].exterior.xy[1])
+            geomaxy = max(self.InputData.GeometryGrid[0].exterior.xy[1])
+            for polygon in self.InputData.GeometryGrid:
+                geominx = min( [min(polygon.exterior.xy[0]), geominx] )
+                geominy = max( [max(polygon.exterior.xy[0]), geominy] )
+                geomaxx = min( [min(polygon.exterior.xy[1]), geomaxx] )
+                geomaxy = max( [max(polygon.exterior.xy[1]), geomaxy] )
+            extent = [geominx-200, geominy-200, geomaxx+200, geomaxy+200]
     
         # Create plot
         fig, ax = plt.subplots()   

@@ -12,7 +12,7 @@ from geopy.geocoders import Nominatim
 from inputData import InputData
 
 #%% Load data
-# Source: https://opendata.cbs.nl/statline/#/CBS/nl/dataset/85163NED/table?dl=87DE5
+# Source: https://opendata.cbs.nl/statline/#/CBS/nl/dataset/85163NED/table?dl=88646
 # Download the file named "CSV met statistische symbolen" for the buurten you want
 # We are interested in the subjects 
 #   Regiocode (gemeente)
@@ -21,12 +21,14 @@ from inputData import InputData
 #   Opleidingsniveau/Middelbaar/Waarde (%)
 #   Opleidingsniveau/Hoog/Waarde (%)
 #   SES-WOA/Totaalscore/Gemiddelde score (Getal)"
-inputData = InputData("Data/SES_WOA_scores_per_wijk_en_buurt_06042023_163218.csv")
+inputData = InputData("Data/SES_WOA_scores_per_wijk_en_buurt_10042023_174114.csv")
 
+# Source: https://opendata.cbs.nl/statline/#/CBS/nl/dataset/85163NED/table?dl=88649
+inputData.add_path("Data/SES_WOA_scores_per_wijk_en_buurt_10042023_174723.csv")
 
-# Source https://www.cbs.nl/nl-nl/maatwerk/2011/48/kerncijfers-wijken-en-buurten-2011
-#inputData.load_miscData("Data/kwb-2011.xls")
-# TODO this dataset does not contain a lot of buurt codes
+# Source: https://opendata.cbs.nl/statline/#/CBS/nl/dataset/85163NED/table?dl=8864C
+inputData.add_path("Data/SES_WOA_scores_per_wijk_en_buurt_10042023_175337.csv")
+
 
 
 #%%
@@ -35,6 +37,7 @@ inputData = InputData("Data/SES_WOA_scores_per_wijk_en_buurt_06042023_163218.csv
 inputData.load_geo_data('Data/wijkenbuurten_2022_v1.GPKG')
 inputData.buurt_filter(devmode=True)
 
+## TODO for some reason a lot of data gets deleted somewhere here in multiple occasions
 
 #%% Translate locations to a grid
 geolocator = Nominatim(user_agent="Dataset")

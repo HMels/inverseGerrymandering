@@ -76,6 +76,50 @@ class InputData:
         self.gather(indices)
         
         
+    def add_path(self, path):
+        '''
+        Adds data from the new path to the parameters.
+
+        Args:
+            path (str): The path to the CSV file containing the socio-economic data.
+
+        '''
+        # Load data from CSV file using pandas
+        data = pd.read_csv(path, delimiter=';', quotechar='"', na_values='       .')
+        
+        # Replace '       .' with NaN in columns 3 and 4 and delete these rows as they don't have data data
+        data = data.replace('       .', float('nan'))
+        data.dropna(inplace=True)
+        data = data.values
+        
+        # Extract relevant variables and store as class variables
+        self.neighbourhoods = np.concatenate([
+            self.neighbourhoods, data[:,1] ]) # neighbourhood names
+        self.neighbourhood_codes = np.concatenate([
+            self.neighbourhood_codes, data[:,2] ]) # neighbourhood codes
+        Population = np.array(data[:,3].tolist()).astype(np.float32)[:]        
+        self.Population = tf.Variable(
+            np.concatenate([self.Population.numpy(), Population], axis=0)
+            , trainable=False, dtype=tf.float32) # Number of households per neighbourhood
+        Education = tf.transpose(tf.Variable([data[:,4], data[:,5], data[:,6]], trainable=False, dtype=tf.float32))
+        self.Education = tf.Variable(
+            np.concatenate([self.Education, Education])
+            , trainable=False, dtype=tf.float32)# education levels Low, Medium, High
+        Socioeconomic_data = np.array(data[:,7].tolist()).astype(np.float32)[:]
+        self.Socioeconomic_data = tf.Variable(
+            np.concatenate([self.Socioeconomic_data, Socioeconomic_data])
+            , trainable=False, dtype=tf.float32) # Socio-economic value of the region
+                
+        # filter buurtcodes that don't start with BU
+        indices = []
+        for i, codes in enumerate(self.neighbourhood_codes):
+            if codes[:2]=="BU":
+                indices.append(i)
+                
+        self.gather(indices)
+        
+        self.N = self.Socioeconomic_data.shape[0]
+        
     @property
     def Socioeconomic_population(self):
         # returns a tf.float32 
@@ -99,16 +143,21 @@ class InputData:
         
         neighbourhoods=[]
         neighbourhood_codes=[]
-        for i in range(len(self.neighbourhoods)):
-            if i in indices:
-                neighbourhoods.append(self.neighbourhoods[i])
-                neighbourhood_codes.append(self.neighbourhood_codes[i])
+        Population=[]
+        Education=[]
+        Socioeconomic_data=[]
+        for i in indices:
+            neighbourhoods.append(self.neighbourhoods[i])
+            neighbourhood_codes.append(self.neighbourhood_codes[i])
+            Population.append(self.Population[i].numpy())
+            Education.append(self.Education[i].numpy())
+            Socioeconomic_data.append(self.Socioeconomic_data[i].numpy())
+                
         self.neighbourhoods = neighbourhoods
         self.neighbourhood_codes = neighbourhood_codes
-        
-        self.Population = tf.gather(self.Population, indices)
-        self.Education = tf.gather(self.Education, indices)
-        self.Socioeconomic_data = tf.gather(self.Socioeconomic_data, indices)        
+        self.Population = tf.Variable(Population, trainable=False, dtype=tf.float32)#tf.gather(self.Population, indices)
+        self.Education = tf.Variable(Education, trainable=False, dtype=tf.float32)#tf.gather(self.Education, indices)
+        self.Socioeconomic_data = tf.Variable(Socioeconomic_data, trainable=False, dtype=tf.float32)#tf.gather(self.Socioeconomic_data, indices)        
         
         
     def load_miscData(self, path):

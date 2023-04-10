@@ -40,7 +40,7 @@ with open("inputData.pickle", "rb") as f:
 
 
 #%% Define model
-N_communities = 5 # Number of communities
+N_communities = 10 # Number of communities
 N_iterations = 50 # Number of iterations for training
 
 # Define optimization algorithm and learning rate
@@ -67,8 +67,7 @@ print("INITIAL VALUES: ")
 model.print_summary()
 
 cdict = create_color_dict(N_communities)
-extent=[-2000, 2000, -1200, 2800]
-fig01, ax01 = model.plot_communities(extent, cdict, title='Communities Before Refinement')
+fig01, ax01 = model.plot_communities(cdict, title='Communities Before Refinement')
     
 
 #%% Train the model for Niterations iterations
@@ -79,7 +78,7 @@ print("FINISHED!\n")
 
 
 #%% Polygon Plot 
-fig02, ax02 = model.plot_communities(extent, cdict, title='Communities After Refinement')
+fig02, ax02 = model.plot_communities(cdict, title='Communities After Refinement')
 
 #% Plotting
 fig1, ax1 = model.OptimizationData.plotCosts()

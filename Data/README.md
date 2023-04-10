@@ -50,3 +50,53 @@ SES_WOA_scores_per_wijk_en_buurt_06042023_163218.cvs
 	- Opleidingsniveau/Hoog/Waarde (%)
 	
 	- SES-WOA/Totaalscore/Gemiddelde score (Getal)"
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+SES_WOA files that make up Amsterdam:
+
+- Download the file named "CSV met statistische symbolen" for the buurten you want
+
+	- Can only download 100 buurten at a time.
+
+- We are interested in the subjects 
+
+	- Regiocode (gemeente)
+
+	- Particuliere huishoudens (Aantal)
+
+	- Opleidingsniveau/Laag/Waarde (%)
+
+	- Opleidingsniveau/Middelbaar/Waarde (%)
+
+	- Opleidingsniveau/Hoog/Waarde (%)
+	
+	- SES-WOA/Totaalscore/Gemiddelde score (Getal)"
+	
+- The Files and Sources:
+
+	- SES_WOA_scores_per_wijk_en_buurt_10042023_174114.cvs
+
+		- Source: https://opendata.cbs.nl/statline/#/CBS/nl/dataset/85163NED/table?dl=88646
+		
+		- Amsterdam - Buyskade e.o.
+
+	- SES_WOA_scores_per_wijk_en_buurt_10042023_174723.cvs
+
+		- Source: https://opendata.cbs.nl/statline/#/CBS/nl/dataset/85163NED/table?dl=88649
+		
+		- Centrale Markt - Sloterdijk
+
+	- SES_WOA_scores_per_wijk_en_buurt_10042023_175337.cvs
+
+		- Source: https://opendata.cbs.nl/statline/#/CBS/nl/dataset/85163NED/table?dl=8864C
+		
+		- Woon- en Groengebied Sloterdijk - Zorgvliet
