@@ -40,11 +40,12 @@ with open("inputData.pickle", "rb") as f:
 
 
 #%% Define model
-N_communities = 10 # Number of communities
-N_iterations = 50 # Number of iterations for training
+# trying to get 10000 households per community
+N_communities = 10#int(np.sum(inputData.Population)/10000) # 20 # Number of communities
+N_iterations = 100 # Number of iterations for training
 
 # Define optimization algorithm and learning rate
-optimizer = tf.keras.optimizers.Adamax(learning_rate=.25)
+optimizer = tf.keras.optimizers.Adamax(learning_rate=.05)
 model = ModelGeo(inputData, N_communities, N_iterations, optimizer)
 '''
 # Adagrad doesn't converge below half of the SES value
@@ -72,7 +73,7 @@ fig01, ax01 = model.plot_communities(cdict, title='Communities Before Refinement
 
 #%% Train the model for Niterations iterations
 print("OPTIMISING...")
-model.refine(N_iterations, temperature=0)
+model.refine(N_iterations, temperature=.05)
 model.applyMapCommunities()
 print("FINISHED!\n")
 
@@ -86,10 +87,13 @@ fig1, ax1 = model.OptimizationData.plotCosts()
 print("OPTIMISED VALUES: ")
 model.print_summary()
 
+# factor by which to normalize the number of bins
+normalization=3.5
+
 
 #%% plot the SES value
 fig2, ax2 = plt.subplots()
-num_bins = model.InputData.Socioeconomic_data.shape[0]
+num_bins = int(model.InputData.Socioeconomic_data.shape[0]/normalization)
 SES_append = np.append(model.InputData.Socioeconomic_data, model.Communities.Socioeconomic_data)
 bin_edges = np.linspace(np.min(SES_append), np.max(SES_append), num_bins+1)
 
@@ -112,13 +116,13 @@ ax2.get_yaxis().set_visible(False)
 ax2.legend(loc='upper right')
 ax2.set_xlabel('SES')
 ax2.get_yaxis().set_visible(False)
-ax2.set_title('Comparison of the economic data by population')
+ax2.set_title('Distribution of the economic data by population')
 plt.show()
 
 
 #%% histogram of the education
 fig3, ax3 = plt.subplots(1, 3, figsize=(12, 4))
-num_bins = model.InputData.Education.shape[0]
+num_bins = int(model.InputData.Education.shape[0]/normalization)
 edu_append = np.append(model.InputData.Education, model.mapped_Education, axis=0)
 bin_edges1 = np.linspace(np.min(edu_append[:,0]), np.max(edu_append[:,0]), num_bins+1)
 bin_edges2 = np.linspace(np.min(edu_append[:,1]), np.max(edu_append[:,1]), num_bins+1)
@@ -146,13 +150,13 @@ ax3[1].set_xlabel('Percentage of the Population in Communities')
 ax3[0].set_title('Low Level')
 ax3[1].set_title('Medium Level')
 ax3[2].set_title('High Level')
-fig3.suptitle('Comparison of Educational Levels by Population')
+fig3.suptitle('Distribution of Educational Levels by Population')
 
 
 
 #%% plot the Populations
 fig4, ax4 = plt.subplots()
-num_bins = model.InputData.Population.shape[0]
+num_bins = int(model.InputData.Population.shape[0]/normalization)
 Pop_appended = np.append(model.InputData.Population, model.mapped_Population)
 bin_edges = np.linspace(np.min(Pop_appended), np.max(Pop_appended), num_bins+1)
 
@@ -175,7 +179,7 @@ ax4.get_yaxis().set_visible(False)
 ax4.legend(loc='upper right')
 ax4.set_xlabel('Population')
 ax4.set_ylabel('Frequency')
-ax4.set_title('Comparison of the economic data by population')
+ax4.set_title('Distribution of population sizes')
 
 
 #%% save all plots

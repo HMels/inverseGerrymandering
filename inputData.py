@@ -112,13 +112,18 @@ class InputData:
                 
         # filter buurtcodes that don't start with BU
         indices = []
+        codes_added = [] # a list of codes that are already there, to prevent doubles
         for i, codes in enumerate(self.neighbourhood_codes):
             if codes[:2]=="BU":
-                indices.append(i)
+                if codes not in codes_added:
+                    indices.append(i)
+                    codes_added.append(codes)
+                else:
+                    print("Code "+codes+" was already in dataset and will be ignored.")
                 
         self.gather(indices)
-        
         self.N = self.Socioeconomic_data.shape[0]
+        
         
     @property
     def Socioeconomic_population(self):
@@ -158,6 +163,8 @@ class InputData:
         self.Population = tf.Variable(Population, trainable=False, dtype=tf.float32)#tf.gather(self.Population, indices)
         self.Education = tf.Variable(Education, trainable=False, dtype=tf.float32)#tf.gather(self.Education, indices)
         self.Socioeconomic_data = tf.Variable(Socioeconomic_data, trainable=False, dtype=tf.float32)#tf.gather(self.Socioeconomic_data, indices)        
+        
+        ##TODO add neighbours here if initiated
         
         
     def load_miscData(self, path):
@@ -369,31 +376,66 @@ class InputData:
         self.N = self.Socioeconomic_data.shape[0]
         
         
-    def find_polygon_neighbors(self):
+    def find_polygon_neighbours(self):
         try:
             self.GeometryGrid
         except:
             raise Exception("Polygons (GeometryGrid) have not been generated. Use self.polygon2grid().")
         
-        num_polygons = len(self.GeometryGrid)
-        neighbors = []
-        
-        # Loop through each polygon and find its neighbors
-        for i in range(num_polygons):
-            neighbors_i = []
-            poly_i = self.GeometryGrid[i]
+        # Loop through each polygon and find its neighbours
+        neighbours = []
+        extra_append = []
+        for i, poly_i in enumerate(self.GeometryGrid):
+            neighbours_i = []
             
             # Loop through each other polygon and check if it shares a common edge with poly_i
-            for j in range(num_polygons):
-                if i != j:
-                    poly_j = self.GeometryGrid[j]
-                    
-                    if poly_i.intersects(poly_j):
-                        if poly_i.touches(poly_j) and (
-                                isinstance(poly_i.boundary.intersection(poly_j.boundary), MultiLineString)
-                                or isinstance(poly_i.boundary.intersection(poly_j.boundary), MultiPoint)):
-                            neighbors_i.append(j)
-            
-            neighbors.append(neighbors_i)
+            for j, poly_j in enumerate(self.GeometryGrid):
+                if i != j and poly_i.intersects(poly_j):
+                    if poly_i.touches(poly_j) and (
+                            isinstance(poly_i.boundary.intersection(poly_j.boundary), MultiLineString)
+                            or isinstance(poly_i.boundary.intersection(poly_j.boundary), MultiPoint)):
+                        neighbours_i.append(j)
         
-        return np.array(neighbors, dtype=list)
+            # if no neighbours are found, look for polygons that touch with points instead of edge
+            if len(neighbours_i)==0:
+                for j, poly_j in enumerate(self.GeometryGrid):
+                    if i != j and poly_i.intersects(poly_j):
+                        neighbours_i.append(j)
+                        extra_append.append([j, i])
+            
+            
+            # if no neighbours are found, find it via KNN
+            if len(neighbours_i)==0:
+                # load coordinates
+                xi_coords = np.array(poly_i.exterior.xy[0].tolist())
+                yi_coords = np.array(poly_i.exterior.xy[1].tolist())
+                minDist = 9999999
+                newindex = None
+                for j, poly_j in enumerate(self.GeometryGrid): # loop over the other polygons
+                    if i!=j:
+                        # load coordinates
+                        xj_coords = np.array(poly_j.exterior.xy[0].tolist()) 
+                        yj_coords = np.array(poly_j.exterior.xy[1].tolist())
+                        # calculate distance between i and j
+                        x_dist = xi_coords[:, np.newaxis] - xj_coords
+                        y_dist = yi_coords[:, np.newaxis] - yj_coords
+                        dist = np.min(x_dist**2+y_dist**2)
+                        # save the smalles index
+                        if dist<minDist:
+                            minDist = dist
+                            newindex = j
+                # append the newest index
+                if j is not None:
+                    neighbours_i.append(newindex)
+                    extra_append.append([newindex, i])
+                else: # raise error when no indices are found, this should not be possible
+                    raise Exception("No nearest neighbours found via KNN")
+                        
+            neighbours.append(neighbours_i)
+        
+        # in the list extra_append, which contains special cases of neighbours (only touches point or KNN)
+        # the inverse also needs to be done, the special cases need to be added to their counterparts.
+        for index in extra_append:
+            neighbours[index[0]].append(index[1])
+        
+        return np.array(neighbours, dtype=list)

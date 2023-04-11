@@ -29,6 +29,14 @@ inputData.add_path("Data/SES_WOA_scores_per_wijk_en_buurt_10042023_174723.csv")
 # Source: https://opendata.cbs.nl/statline/#/CBS/nl/dataset/85163NED/table?dl=8864C
 inputData.add_path("Data/SES_WOA_scores_per_wijk_en_buurt_10042023_175337.csv")
 
+# Source: https://opendata.cbs.nl/statline/#/CBS/nl/dataset/85163NED/table?dl=886FA
+inputData.add_path("Data/SES_WOA_scores_per_wijk_en_buurt_11042023_123629.csv")
+
+# Source: https://opendata.cbs.nl/statline/#/CBS/nl/dataset/85163NED/table?dl=88701
+inputData.add_path("Data/SES_WOA_scores_per_wijk_en_buurt_11042023_124047.csv")
+
+# Source: https://opendata.cbs.nl/statline/#/CBS/nl/dataset/85163NED/table?dl=88705
+inputData.add_path("Data/SES_WOA_scores_per_wijk_en_buurt_11042023_124305.csv")
 
 
 #%%

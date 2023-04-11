@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import random
 from matplotlib.patches import Polygon as PolygonPatch
+import time
 
 tf.config.run_functions_eagerly(True)  ### TODO should be False
 plt.close('all')
@@ -64,6 +65,8 @@ class ModelGeo(InputData, tf.keras.Model):
         """
         #super(Dataset, self).__init__()
         tf.keras.Model.__init__(self)
+        
+        ## TODO delete the optimizer, it isn't being used
         
         # dataset should have the next variables: 
         #    neighbourhoods (numpy.ndarray): A 1D array of strings containing the names of the neighbourhoods.
@@ -137,6 +140,7 @@ class ModelGeo(InputData, tf.keras.Model):
     def applyMapCommunities(self):
         self.Communities.Population = self.mapped_Population
         self.Communities.Socioeconomic_data = self.mapped_Socioeconomic_data
+        ## TODO add extra code here for education etc.
         
         
         
@@ -286,7 +290,7 @@ class ModelGeo(InputData, tf.keras.Model):
         
         # load neigbhours
         if self.GeometryNeighbours is not None: 
-            self.GeometryNeighbours = self.InputData.find_polygon_neighbors()
+            self.GeometryNeighbours = self.InputData.find_polygon_neighbours()
             
         for i in range(Nit):
             # iterate over the neighbourhoods 
@@ -370,9 +374,9 @@ class ModelGeo(InputData, tf.keras.Model):
             i = stack.pop()
             if i not in visited:
                 visited.add(i)
-                # Add unvisited neighbors to stack
-                neighbors = self.GeometryNeighbours[i]
-                for ni in neighbors:
+                # Add unvisited neighbours to stack
+                neighbours = self.GeometryNeighbours[i]
+                for ni in neighbours:
                     if ni not in visited and self.labels[ni] == label:
                         stack.append((ni,))
     
@@ -428,12 +432,12 @@ class ModelGeo(InputData, tf.keras.Model):
     @tf.function
     def initialize_distances(self):
         """
-        Initializes the pairwise distances between the newly created communities and the initial neighborhoods.
+        Initializes the pairwise distances between the newly created communities and the initial neighbourhoods.
 
         Parameters:
         -----------
         InputData.Locations: tf.float32 Tensor
-            A tensor of shape (InputData.N, 2) containing the grid locations of the initial neighborhoods.
+            A tensor of shape (InputData.N, 2) containing the grid locations of the initial neighbourhoods.
         Communities.Locations: tf.float32 Tensor
             A tensor of shape (Communities.N, 2) containing the grid locations of the newly created communities.
 
@@ -462,7 +466,7 @@ class ModelGeo(InputData, tf.keras.Model):
         '''
         Initialised the labels via:
             1. The neighbourhoods closest to the community centers will be initialised
-                as those communities. The rest will be initiated with a Noe Label
+                as those communities. The rest will be initiated with a New Label
             2. The model iterates over the communities and the adjecent neighbours of 
                 those communities
                 2.1. The model calculates which new neighbour (that is not part of another community)
@@ -472,6 +476,8 @@ class ModelGeo(InputData, tf.keras.Model):
                 2.4. The model evaluates if there are any neighbourhoods that are not part of 
                     Communities
                 2.5. If not, the model stops. Else it will iterate further
+                
+                ## TODO add the new code here. About force quiting!
 
         Raises
         ------
@@ -488,7 +494,7 @@ class ModelGeo(InputData, tf.keras.Model):
         except: raise Exception("Distances should be initialized before running this function!")
         
         labels = [None for _ in range(self.InputData.N)]
-        self.GeometryNeighbours = self.InputData.find_polygon_neighbors()
+        self.GeometryNeighbours = self.InputData.find_polygon_neighbours()
         
         # create the basis of the communities. The initial neighbours from which the communities spread out
         index = tf.argmin(self.distances, axis=1)
@@ -503,9 +509,10 @@ class ModelGeo(InputData, tf.keras.Model):
                     
         # let the communities spread out to nearest neighbours
         avg_SES = tf.reduce_mean(self.InputData.Socioeconomic_population)
+        iteration_stuck = 0
+        none_indices_old = []
         while True:
-            
-            # iterate over the communities and load their current values
+            # iterate over the communities randomly and load their current values
             Coms = list(range(self.Communities.N))
             random.shuffle(Coms)
             for i in Coms:
@@ -516,8 +523,7 @@ class ModelGeo(InputData, tf.keras.Model):
                 SES_neighbour = tf.gather(self.InputData.Socioeconomic_population, com_Neighbours[i])
                 SES_option=(np.abs((SES_current + SES_neighbour - avg_SES).numpy()))
                     
-                # choose the SES value that lies closest to the average
-                ##TODO make sure this is done after the previous loop is done, such that it can decide double neighbourhoods
+                # choose the best SES value
                 for j in range(len(SES_option)): 
                     index_decision = com_Neighbours[i][np.argsort(SES_option)[j]]
                     if labels[index_decision] is None: # Neighbourhood should not be part of community already
@@ -525,8 +531,8 @@ class ModelGeo(InputData, tf.keras.Model):
                     
                 if index_decision in com_index: raise Exception("The index_decision is already part of the community!")
                 
-                if labels[index_decision] is None: # in case all neighbours are already taken
-                    # add the newly decided values to the community
+                # in case all neighbours are already taken add the newly decided values to the community
+                if labels[index_decision] is None: 
                     labels[index_decision] = i
                     com_Neighbours[i] += list(self.GeometryNeighbours[index_decision])
                     com_SES[i] +=  tf.gather(self.InputData.Socioeconomic_population, index_decision).numpy()
@@ -546,13 +552,30 @@ class ModelGeo(InputData, tf.keras.Model):
                     count+=1
             if count == 0: break
         
+            # see if the model has gotten stuck
+            none_indices_new = [i for i, label in enumerate(labels) if label is None]
+            if none_indices_new == none_indices_old:
+                iteration_stuck+=1
+                if iteration_stuck==50: # after 50 iterations  of nothing happening, force exit
+                    print("PROGRAM GOT STUCK: FORCE EXIT!") 
+                    print("During initialization of labels, "+str(len(none_indices_new))+" labels where not initialized.")
+                    print("They will now be initialized according to their nearest neighbours label.")
+                    time.sleep(3)
+                    for index in none_indices_new: # copy the label from its neighbour
+                        for index_nghb in com_Neighbours[i]:
+                            if labels[index_nghb] is not None:    
+                                labels[index]=labels[index_nghb]
+                    break
+            else: 
+                iteration_stuck=0
+            none_indices_old = none_indices_new
         
         self.labels = tf.Variable(labels)   
         self.applyMapCommunities()         
         return self.labels
     
     
-    def plot_communities(self,cdict,  extent=None, title='Communities After Optimization'):
+    def plot_communities(self,cdict, extent=None, print_labels=False, title='Communities After Optimization'):
         # Reload colors
         colour = []
         for label in self.labels.numpy():
@@ -576,12 +599,13 @@ class ModelGeo(InputData, tf.keras.Model):
             patch = PolygonPatch(np.array(polygon.exterior.xy).T, facecolor=colour[i], alpha=0.5)
             ax.add_patch(patch)
     
-        colors = [cdict[i] for i in range(self.Communities.N)]
-        x, y = np.meshgrid(extent[1]*12/16, np.linspace(extent[2]+(extent[3]-extent[2])*2/4,
-                                                      extent[2]+(extent[3]-extent[2])*15/16, self.Communities.N))
-        ax.scatter(x, y, s=self.Communities.Population/100, c=colors, alpha=.8, ec='black')
-        for i, txt in enumerate(np.round(self.Communities.Socioeconomic_data.numpy(), 3)):
-            ax.annotate(txt, (x[i]+80, y[i]-80), fontsize=10)
+        if print_labels:
+            colors = [cdict[i] for i in range(self.Communities.N)]
+            x, y = np.meshgrid(extent[1]*12/16, np.linspace(extent[2]+(extent[3]-extent[2])*2/4,
+                                                          extent[2]+(extent[3]-extent[2])*15/16, self.Communities.N))
+            ax.scatter(x, y, s=self.Communities.Population/100, c=colors, alpha=.8, ec='black')
+            for i, txt in enumerate(np.round(self.Communities.Socioeconomic_data.numpy(), 3)):
+                ax.annotate(txt, (x[i]+80, y[i]-80), fontsize=10)
     
         ax.set_xlim(extent[0],extent[1])
         ax.set_ylim(extent[2],extent[3])

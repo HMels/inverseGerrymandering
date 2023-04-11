@@ -100,3 +100,21 @@ SES_WOA files that make up Amsterdam:
 		- Source: https://opendata.cbs.nl/statline/#/CBS/nl/dataset/85163NED/table?dl=8864C
 		
 		- Woon- en Groengebied Sloterdijk - Zorgvliet
+
+	- SES_WOA_scores_per_wijk_en_buurt_11042023_123629.cvs
+
+		- Source: https://opendata.cbs.nl/statline/#/CBS/nl/dataset/85163NED/table?dl=886FA
+		
+		- Frankendael - Bedrijventerrein Nieuwendammerdijk
+
+	- SES_WOA_scores_per_wijk_en_buurt_11042023_124047.cvs
+
+		- Source: https://opendata.cbs.nl/statline/#/CBS/nl/dataset/85163NED/table?dl=88701
+		
+		- Waterland - Amsterdamse Bos
+
+	- SES_WOA_scores_per_wijk_en_buurt_11042023_124305.cvs
+
+		- Source: https://opendata.cbs.nl/statline/#/CBS/nl/dataset/85163NED/table?dl=88705
+		
+		- Buitenveldert West Midden - Landelijk gebied Driemond
