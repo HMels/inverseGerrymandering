@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt
 
 
 class OptimizationData:
-    def __init__(self, weights=[10,1,1], N_iterations=100, LN=[1,1,1], optimizer=tf.keras.optimizers.Adamax(learning_rate=.1)):
+    def __init__(self, weights=[10,1,1,1], N_iterations=100, LN=[1,1,1,1], optimizer=tf.keras.optimizers.Adamax(learning_rate=.1)):
         '''
         Initializes an instance of the OptimizationData class.
 
@@ -49,6 +49,8 @@ class OptimizationData:
             The weight for population boundaries.
         weight_distance : int
             The weight for distance.
+        weight_education : int
+            The weight for the education
         LN : list of int
             The regularization N powers.
         optimizer : TensorFlow optimizer
@@ -63,13 +65,14 @@ class OptimizationData:
         self.weight_SESvariance = weights[0]
         self.weight_popBounds = weights[1]
         self.weight_distance = weights[2]
+        self.weight_education = weights[3]
         
         self.LN = LN # the reguralization N powers
         self.optimizer = optimizer
         
         
     @tf.function
-    def saveCosts(self, SES_variance, cost_popBounds, cost_distance):
+    def saveCosts(self, SES_variance, cost_popBounds, cost_distance, cost_education):
         '''
         Parameters:
             SES_variance (TensorFlow tensor):
@@ -78,15 +81,18 @@ class OptimizationData:
                 The cost due to the number of individuals in each community.
             cost_distance (TensorFlow tensor):
                 The cost due to the distance between each community.
+            cost_education (TensorFlow tensor):
+                The cost due to the education differences between each community.
         '''
         self.Cost_SES_variance = abs( SES_variance * self.weight_SESvariance ) **self.LN[0]
         self.Cost_popBounds = abs( cost_popBounds * self.weight_popBounds ) **self.LN[1]
         self.Cost_distance = abs( cost_distance * self.weight_distance )**self.LN[2]
+        self.cost_education = abs( cost_education * self.weight_education )**self.LN[3]
         
         
     @property
     def totalCost(self):
-        return self.Cost_SES_variance + self.Cost_popBounds + self.Cost_distance
+        return self.Cost_SES_variance + self.Cost_popBounds + self.Cost_distance + self.cost_education
         
     
     @tf.function
@@ -113,9 +119,11 @@ class OptimizationData:
             self.costs[self.i_iteration, 1] = self.Cost_SES_variance.numpy()
             self.costs[self.i_iteration, 2] = self.Cost_popBounds.numpy()
             self.costs[self.i_iteration, 3] = self.Cost_distance.numpy()
+            self.costs[self.i_iteration, 4] = self.cost_education.numpy()
         else:
             costs = np.array([self.totalCost, self.Cost_SES_variance.numpy(), 
-                              self.Cost_popBounds.numpy(), self.Cost_distance.numpy() ])
+                              self.Cost_popBounds.numpy(), self.Cost_distance.numpy(),
+                              self.cost_education.numpy() ])
             self.costs = np.append(self.costs, costs[None,:], axis=0)
         self.i_iteration += 1
         
@@ -134,6 +142,7 @@ class OptimizationData:
         ax.plot(self.costs[:, 1], label="L"+str(self.LN[0])+" SES variance", ls="--")
         ax.plot(self.costs[:, 2], label="L"+str(self.LN[1])+" population bounds", ls="--")
         ax.plot(self.costs[:, 3], label="L"+str(self.LN[2])+" distance", ls="--")
+        ax.plot(self.costs[:, 4], label="L"+str(self.LN[3])+" education", ls="--")
         ax.set_xlim(0, self.i_iteration-1)
         ax.set_ylim(0, np.max(self.costs[:, 0])*1.2)
         ax.set_title("Costs during Refinement")
@@ -142,9 +151,10 @@ class OptimizationData:
         plt.legend()
         return fig, ax
     
-    def printCosts(self):
-        print("Partial costs:\n   L{} SES variance = {}\n   L{} population bounds = {},\n   L{} distance = {}\n".format(
+    def printCosts(self, text="Partial costs:"):
+        print(text+"\n   L{} SES variance = {}\n   L{} population bounds = {},\n   L{} distance = {},\n   L{} education = {}\n".format(
             self.LN[0], self.Cost_SES_variance.numpy(),
             self.LN[1], self.Cost_popBounds.numpy(),
-            self.LN[2], self.Cost_distance.numpy()
+            self.LN[2], self.Cost_distance.numpy(),
+            self.LN[3], self.cost_education.numpy()
         ))

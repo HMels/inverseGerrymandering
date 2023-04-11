@@ -12,20 +12,40 @@ from geopy.geocoders import Nominatim
 from inputData import InputData
 
 #%% Load data
-if True: # loading the geoData takes too long so this way I only have to do it once
-    # Source: https://opendata.cbs.nl/statline/#/CBS/nl/dataset/85163NED/table?ts=1669130926836
-    # Download the file named "CSV met statistische symbolen"
-    inputData = InputData("Data/SES_WOA_scores_per_wijk_en_buurt_08032023_175111.csv")
-    
-    
-    # Source: https://www.atlasleefomgeving.nl/kaarten
-    inputData.load_geo_data('Data/wijkenbuurten_2022_v1.GPKG')
-    inputData.buurt_filter(loadGeometry=True)
-    
-else: 
-    inputData.reload_path("Data/SES_WOA_scores_per_wijk_en_buurt_08032023_175111.csv")
-    inputData.buurt_filter(loadGeometry=True)
+# Source: https://opendata.cbs.nl/statline/#/CBS/nl/dataset/85163NED/table?dl=88646
+# Download the file named "CSV met statistische symbolen" for the buurten you want
+# We are interested in the subjects 
+#   Regiocode (gemeente)
+#   Particuliere huishoudens (Aantal)
+#   Opleidingsniveau/Laag/Waarde (%)
+#   Opleidingsniveau/Middelbaar/Waarde (%)
+#   Opleidingsniveau/Hoog/Waarde (%)
+#   SES-WOA/Totaalscore/Gemiddelde score (Getal)"
+inputData = InputData("Data/SES_WOA_scores_per_wijk_en_buurt_10042023_174114.csv")
 
+# Source: https://opendata.cbs.nl/statline/#/CBS/nl/dataset/85163NED/table?dl=88649
+inputData.add_path("Data/SES_WOA_scores_per_wijk_en_buurt_10042023_174723.csv")
+
+# Source: https://opendata.cbs.nl/statline/#/CBS/nl/dataset/85163NED/table?dl=8864C
+inputData.add_path("Data/SES_WOA_scores_per_wijk_en_buurt_10042023_175337.csv")
+
+# Source: https://opendata.cbs.nl/statline/#/CBS/nl/dataset/85163NED/table?dl=886FA
+inputData.add_path("Data/SES_WOA_scores_per_wijk_en_buurt_11042023_123629.csv")
+
+# Source: https://opendata.cbs.nl/statline/#/CBS/nl/dataset/85163NED/table?dl=88701
+inputData.add_path("Data/SES_WOA_scores_per_wijk_en_buurt_11042023_124047.csv")
+
+# Source: https://opendata.cbs.nl/statline/#/CBS/nl/dataset/85163NED/table?dl=88705
+inputData.add_path("Data/SES_WOA_scores_per_wijk_en_buurt_11042023_124305.csv")
+
+
+#%%
+# Source: https://www.atlasleefomgeving.nl/kaarten
+# algemene kaarten: Wijk- en buurt informatie
+inputData.load_geo_data('Data/wijkenbuurten_2022_v1.GPKG')
+inputData.buurt_filter(devmode=True)
+
+## TODO for some reason a lot of data gets deleted somewhere here in multiple occasions
 
 #%% Translate locations to a grid
 geolocator = Nominatim(user_agent="Dataset")
