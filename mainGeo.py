@@ -92,7 +92,7 @@ normalization=3.5
 
 
 #%% plot the SES value
-fig2, ax2 = plt.subplots()
+fig2, ax2 = plt.subplots(figsize=(7.5, 4))
 num_bins = int(model.InputData.Socioeconomic_data.shape[0]/normalization)
 SES_append = np.append(model.InputData.Socioeconomic_data, model.Communities.Socioeconomic_data)
 bin_edges = np.linspace(np.min(SES_append), np.max(SES_append), num_bins+1)
@@ -114,14 +114,14 @@ ax2.get_yaxis().set_visible(False)
 
 # setting labels
 ax2.legend(loc='upper right')
-ax2.set_xlabel('SES')
+ax2.set_xlabel('Socio-economic score')
 ax2.get_yaxis().set_visible(False)
 ax2.set_title('Distribution of the economic data by population')
 plt.show()
 
 
 #%% histogram of the education
-fig3, ax3 = plt.subplots(1, 3, figsize=(12, 4))
+fig3, ax3 = plt.subplots(1, 3, figsize=(15, 4))
 num_bins = int(model.InputData.Education.shape[0]/normalization)
 edu_append = np.append(model.InputData.Education, model.mapped_Education, axis=0)
 bin_edges1 = np.linspace(np.min(edu_append[:,0]), np.max(edu_append[:,0]), num_bins+1)
@@ -155,7 +155,7 @@ fig3.suptitle('Distribution of Educational Levels by Population')
 
 
 #%% plot the Populations
-fig4, ax4 = plt.subplots()
+fig4, ax4 = plt.subplots(figsize=(7.5, 4))
 num_bins = int(model.InputData.Population.shape[0]/normalization)
 Pop_appended = np.append(model.InputData.Population, model.mapped_Population)
 bin_edges = np.linspace(np.min(Pop_appended), np.max(Pop_appended), num_bins+1)
@@ -184,6 +184,22 @@ ax4.set_title('Distribution of population sizes')
 
 #%% save all plots
 if True:
+    ax01.set_title('')
+    ax02.set_title('')
+    ax1.set_title('')
+    ax2.set_title('')
+    fig3.suptitle('')
+    ax4.set_title('')
+    #ax4.get_legend().remove()
+    #ax3[2].get_legend().remove()
+    
+    fig01.tight_layout()
+    fig02.tight_layout()
+    fig1.tight_layout()
+    fig2.tight_layout()
+    fig3.tight_layout()
+    fig4.tight_layout()
+    
     fig01.savefig(fname="Output/01_CommunitiesBeforeRefinement")
     fig02.savefig(fname="Output/02_CommunitiesAfterRefinement")
     fig1.savefig(fname="Output/03_CostOtimizationPlot")

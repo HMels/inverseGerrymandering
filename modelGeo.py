@@ -90,8 +90,8 @@ class ModelGeo(InputData, tf.keras.Model):
         
         # initialise weights
         # ORDER OF WEIGHTS: SES variance, Pop bounds, Distance, Education
-        self.OptimizationData = OptimizationData(weights=[8,12,6,6], N_iterations=N_iterations,
-                                                 LN=[1,1,2,2], optimizer=optimizer)
+        self.OptimizationData = OptimizationData(weights=[8,6,6,6], N_iterations=N_iterations,
+                                                 LN=[1,2,2,2], optimizer=optimizer)
         
         # Initialize population parameters
         self.tot_pop = tf.reduce_sum(self.InputData.Population)
@@ -594,7 +594,7 @@ class ModelGeo(InputData, tf.keras.Model):
             extent = [geominx-200, geominy-200, geomaxx+200, geomaxy+200]
     
         # Create plot
-        fig, ax = plt.subplots()   
+        fig, ax = plt.subplots(figsize=(5, 4))   
         for i, polygon in enumerate(self.InputData.GeometryGrid):
             patch = PolygonPatch(np.array(polygon.exterior.xy).T, facecolor=colour[i], alpha=0.5)
             ax.add_patch(patch)
@@ -609,6 +609,8 @@ class ModelGeo(InputData, tf.keras.Model):
     
         ax.set_xlim(extent[0],extent[1])
         ax.set_ylim(extent[2],extent[3])
+        ax.set_xticks([])
+        ax.set_yticks([])
         ax.set_title(title)
         return fig, ax
     

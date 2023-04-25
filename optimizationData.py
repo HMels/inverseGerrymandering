@@ -137,7 +137,7 @@ class OptimizationData:
         
     def plotCosts(self):
         # Plot cost values over time
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(figsize=(5, 4))
         ax.plot(self.costs[:, 0], label="Total costs", ls="-")
         ax.plot(self.costs[:, 1], label="L"+str(self.LN[0])+" SES variance", ls="--")
         ax.plot(self.costs[:, 2], label="L"+str(self.LN[1])+" population bounds", ls="--")
@@ -146,8 +146,8 @@ class OptimizationData:
         ax.set_xlim(0, self.i_iteration-1)
         ax.set_ylim(0, np.max(self.costs[:, 0])*1.2)
         ax.set_title("Costs during Refinement")
-        ax.set_xlabel("Iterations")
-        ax.set_ylabel("Costs")
+        #ax.set_xlabel("Iterations")
+        #ax.set_ylabel("Costs")
         plt.legend()
         return fig, ax
     

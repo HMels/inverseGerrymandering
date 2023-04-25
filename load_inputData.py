@@ -21,6 +21,10 @@ from inputData import InputData
 #   Opleidingsniveau/Middelbaar/Waarde (%)
 #   Opleidingsniveau/Hoog/Waarde (%)
 #   SES-WOA/Totaalscore/Gemiddelde score (Getal)"
+
+inputData = InputData("Data/SES_WOA_scores_per_wijk_en_buurt_25042023_160857.csv")
+
+'''
 inputData = InputData("Data/SES_WOA_scores_per_wijk_en_buurt_10042023_174114.csv")
 
 # Source: https://opendata.cbs.nl/statline/#/CBS/nl/dataset/85163NED/table?dl=88649
@@ -37,7 +41,7 @@ inputData.add_path("Data/SES_WOA_scores_per_wijk_en_buurt_11042023_124047.csv")
 
 # Source: https://opendata.cbs.nl/statline/#/CBS/nl/dataset/85163NED/table?dl=88705
 inputData.add_path("Data/SES_WOA_scores_per_wijk_en_buurt_11042023_124305.csv")
-
+'''
 
 #%%
 # Source: https://www.atlasleefomgeving.nl/kaarten

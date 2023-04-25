@@ -404,32 +404,31 @@ class InputData:
                         extra_append.append([j, i])
             
             
-            # if no neighbours are found, find it via KNN
-            if len(neighbours_i)==0:
+                # if no neighbours are found, find it via KNN
+                #if len(neighbours_i)==0:
                 # load coordinates
                 xi_coords = np.array(poly_i.exterior.xy[0].tolist())
                 yi_coords = np.array(poly_i.exterior.xy[1].tolist())
-                minDist = 9999999
-                newindex = None
+                minDist = []
+                idx = []
                 for j, poly_j in enumerate(self.GeometryGrid): # loop over the other polygons
-                    if i!=j:
+                    if i!=j and not (j in neighbours_i):
                         # load coordinates
                         xj_coords = np.array(poly_j.exterior.xy[0].tolist()) 
                         yj_coords = np.array(poly_j.exterior.xy[1].tolist())
                         # calculate distance between i and j
                         x_dist = xi_coords[:, np.newaxis] - xj_coords
                         y_dist = yi_coords[:, np.newaxis] - yj_coords
-                        dist = np.min(x_dist**2+y_dist**2)
-                        # save the smalles index
-                        if dist<minDist:
-                            minDist = dist
-                            newindex = j
-                # append the newest index
-                if j is not None:
-                    neighbours_i.append(newindex)
-                    extra_append.append([newindex, i])
-                else: # raise error when no indices are found, this should not be possible
-                    raise Exception("No nearest neighbours found via KNN")
+                        # save the minimum distance from 
+                        minDist.append( np.min(x_dist**2+y_dist**2) )
+                        idx.append(j)
+                
+                for j in np.argsort(minDist)[:2]: # we take the two closest areas and add them
+                    if idx[j] is not None:
+                        neighbours_i.append(idx[j])
+                        extra_append.append([idx[j], i])
+                    else: # raise error when no indices are found, this should not be possible
+                        raise Exception("No nearest neighbours found via KNN")
                         
             neighbours.append(neighbours_i)
         
