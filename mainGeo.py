@@ -47,16 +47,6 @@ N_iterations = 100 # Number of iterations for training
 # Define optimization algorithm and learning rate
 optimizer = tf.keras.optimizers.Adamax(learning_rate=.05)
 model = ModelGeo(inputData, N_communities, N_iterations, optimizer)
-'''
-# Adagrad doesn't converge below half of the SES value
-# Nadam works but has shocky convergence
-# Adam results in a very uniform map
-# Adamax works well ->  lr=1 fails. 
-#                       lr=.1 might be too uniform
-#                       lr=.01 might be better but handling of weights and reg should be better
-
-#TODO discuss the figures I get. Compare with how good the reguralisation works and use different regs
-'''
 
 
 #%% plot initial state
@@ -182,6 +172,9 @@ ax4.set_ylabel('Frequency')
 ax4.set_title('Distribution of population sizes')
 
 
+
+
+
 #%% save all plots
 if True:
     ax01.set_title('')
@@ -190,8 +183,8 @@ if True:
     ax2.set_title('')
     fig3.suptitle('')
     ax4.set_title('')
-    #ax4.get_legend().remove()
-    #ax3[2].get_legend().remove()
+    ax4.get_legend().remove()
+    ax3[2].get_legend().remove()
     
     fig01.tight_layout()
     fig02.tight_layout()

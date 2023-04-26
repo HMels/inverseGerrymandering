@@ -90,8 +90,8 @@ class ModelGeo(InputData, tf.keras.Model):
         
         # initialise weights
         # ORDER OF WEIGHTS: SES variance, Pop bounds, Distance, Education
-        self.OptimizationData = OptimizationData(weights=[8,6,6,6], N_iterations=N_iterations,
-                                                 LN=[1,2,2,2], optimizer=optimizer)
+        self.OptimizationData = OptimizationData(weights=[8,35,30,35], N_iterations=N_iterations,
+                                                 LN=[1,2,2,3], optimizer=optimizer)
         
         # Initialize population parameters
         self.tot_pop = tf.reduce_sum(self.InputData.Population)
@@ -99,7 +99,7 @@ class ModelGeo(InputData, tf.keras.Model):
         self.OptimizationData.initialize_popBoundaries(self.avg_pop, population_bounds=[0.9, 1.1])
         
         # costs initialization 
-        self.initialize_weights()
+        self.initialize_norm()
         self.cost_fn()
         self.OptimizationData.storeCosts()
         self.OptimizationData.printCosts(text="Initial state of Costs:")
@@ -385,16 +385,12 @@ class ModelGeo(InputData, tf.keras.Model):
     
     
     @tf.function
-    def initialize_weights(self):
+    def initialize_norm(self):
         # Normalizes the weights such that relatively all costs start at 1. 
         # Then it multplies the normalized weights by the assigned weights
-        self.OptimizationData.weight_SESvariance = self.OptimizationData.weight_SESvariance / ( 
-            tf.math.reduce_variance( self(self.InputData.Socioeconomic_population) )
-            )
-        self.OptimizationData.weight_distance = self.OptimizationData.weight_distance / self.cost_distances()
-        self.OptimizationData.weight_education = self.OptimizationData.weight_education /  tf.math.reduce_mean(
-            tf.math.reduce_variance( self.mapped_Education, axis=0 )
-            )
+        self.OptimizationData.norm_SESvariance = tf.math.reduce_variance( self(self.InputData.Socioeconomic_population) )
+        self.OptimizationData.norm_distance = self.cost_distances()
+        self.OptimizationData.norm_education = tf.math.reduce_mean( tf.math.reduce_variance( self.mapped_Education, axis=0 ) )
         
         # POP Bounds
         cost_popBounds = tf.reduce_sum(tf.where(self.mapped_Population > self.OptimizationData.popBoundHigh,
@@ -402,7 +398,7 @@ class ModelGeo(InputData, tf.keras.Model):
                         tf.where(self.mapped_Population < self.OptimizationData.popBoundLow, 
                                  tf.abs(self.mapped_Population-self.OptimizationData.popBoundLow), 0)) / self.tot_pop
         if cost_popBounds!=0:
-            self.OptimizationData.weight_popBounds = self.OptimizationData.weight_popBounds / cost_popBounds
+            self.OptimizationData.norm_popBounds =  cost_popBounds
         
         
         

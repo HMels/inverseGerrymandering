@@ -62,10 +62,17 @@ class OptimizationData:
         self.costs = np.zeros((N_iterations, len(weights)+1)) # Define variables to store costs during training
         self.i_iteration = 0  # current interation
         
+        # weights 
         self.weight_SESvariance = weights[0]
         self.weight_popBounds = weights[1]
         self.weight_distance = weights[2]
         self.weight_education = weights[3]
+        
+        # normalisation factors
+        self.norm_SESvariance = 1
+        self.norm_popBounds = 1
+        self.norm_distance = 1
+        self.norm_education = 1
         
         self.LN = LN # the reguralization N powers
         self.optimizer = optimizer
@@ -84,10 +91,10 @@ class OptimizationData:
             cost_education (TensorFlow tensor):
                 The cost due to the education differences between each community.
         '''
-        self.Cost_SES_variance = abs( SES_variance * self.weight_SESvariance ) **self.LN[0]
-        self.Cost_popBounds = abs( cost_popBounds * self.weight_popBounds ) **self.LN[1]
-        self.Cost_distance = abs( cost_distance * self.weight_distance )**self.LN[2]
-        self.cost_education = abs( cost_education * self.weight_education )**self.LN[3]
+        self.Cost_SES_variance = self.weight_SESvariance * abs( SES_variance / self.norm_SESvariance ) **self.LN[0]
+        self.Cost_popBounds = self.weight_popBounds * abs( cost_popBounds / self.norm_popBounds ) **self.LN[1]
+        self.Cost_distance = self.weight_distance * abs( cost_distance / self.norm_distance )**self.LN[2]
+        self.cost_education = self.weight_education  * abs( cost_education / self.norm_education )**self.LN[3]
         
         
     @property
