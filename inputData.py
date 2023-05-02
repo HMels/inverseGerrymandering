@@ -20,12 +20,13 @@ from shapely.geometry import Polygon, MultiLineString, MultiPoint
 
 
 class InputData:
-    def __init__(self, path):
+    def __init__(self, path, buurten=True):
         """
         Initializes an instance of the class and loads socio-economic data from a CSV file.
     
         Args:
             path (str): The path to the CSV file containing the socio-economic data.
+            buurten (bool): True if you only need to load the buurten, False if you need wijken
         
         Raises:
             FileNotFoundError: If the specified file path does not exist.
@@ -70,9 +71,18 @@ class InputData:
         
         # filter buurtcodes that don't start with BU
         indices = []
-        for i, codes in enumerate(self.neighbourhood_codes):
-            if codes[:2]=="BU":
-                indices.append(i)
+        self.wijk_coordinates = []
+        if buurten:
+            for i, codes in enumerate(self.neighbourhood_codes):
+                if codes[:2]=="BU":
+                    indices.append(i)
+                if codes[:2]=="WK":
+                    self.wijk_coordinates.append()
+                    ##TODO add something here that adds the locations of the wijken
+        else:
+            for i, codes in enumerate(self.neighbourhood_codes):
+                if codes[:2]=="WK":
+                    indices.append(i)
         self.gather(indices)
         
         
@@ -125,11 +135,12 @@ class InputData:
         self.N = self.Socioeconomic_data.shape[0]
         
         
-    @property
-    def Socioeconomic_population(self):
+    #@property
+    #def Socioeconomic_population(self):
+    # apparently this is not how SES values work 
         # returns a tf.float32 
         # The socioeconomic data multiplied by the population to get the actual socioeconomic value.
-        return self.Socioeconomic_data * self.Population
+    #    return self.Socioeconomic_data * self.Population
     
     
     @property

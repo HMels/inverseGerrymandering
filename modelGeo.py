@@ -74,6 +74,7 @@ class ModelGeo(InputData, tf.keras.Model):
         #    Socioeconomic_data (numpy.ndarray): A 1D array of floats containing the socio-economic value of each neighbourhood.
         #    Locations (numpy.ndarray): A numpy array of shape (n,2) containing the mapped coordinates.
         self.InputData = InputData
+        self.Socioeconomic_data = InputData.Socioeconomic_data
         self.GeometryNeighbours = None
         
         if self.InputData.Locations is None:
@@ -124,7 +125,8 @@ class ModelGeo(InputData, tf.keras.Model):
     @property
     def mapped_Socioeconomic_data(self):
         # the Socioeconomic data per Community
-        return self(self.InputData.Socioeconomic_population)/self.mapped_Population
+        #return self(self.InputData.Socioeconomic_population)/self.mapped_Population
+        return self(self.Socioeconomic_data) / self.numBuurtenInCommunities
     
     @property
     def population_Map(self):
@@ -135,6 +137,27 @@ class ModelGeo(InputData, tf.keras.Model):
     def neighbourhood_Map(self):
         # the Map (as Communities.N x InputData.N Tensor) filled with ones to map the neighbourhoods
         return self.Map(tf.ones(self.InputData.N))
+    
+    @property
+    def mean_distances(self):
+        return tf.reduce_mean( self.distances * self.neighbourhood_Map , axis=1)
+    
+    @property
+    def numBuurtenInCommunities(self):
+        '''
+        Counts the amount of buurten in each community
+
+        Returns
+        -------
+        int N array
+            The amount of buurten in each community.
+        '''
+        counts = tf.zeros((self.Communities.N,), dtype=tf.int32)
+        for i in range(self.Communities.N):
+            label_count = tf.reduce_sum(tf.cast(tf.equal(self.labels, i), tf.int32))
+            counts = tf.tensor_scatter_nd_add(counts, [[i]], [label_count])
+    
+        return counts.numpy()
     
     @tf.function
     def applyMapCommunities(self):
@@ -201,8 +224,8 @@ class ModelGeo(InputData, tf.keras.Model):
 
         '''
         return tf.reduce_sum(self.Map(inputs), axis=1)
-            
     
+
     @tf.function
     def cost_fn(self):
         """
@@ -234,7 +257,7 @@ class ModelGeo(InputData, tf.keras.Model):
         Tensor: A TensorFlow tensor representing the sum of all partial costs.
         """        
         # Calculate variance of socioeconomic data mapped to population map
-        SES_variance = tf.math.reduce_variance( self(self.InputData.Socioeconomic_population) )
+        SES_variance = tf.math.reduce_variance( self.mapped_Socioeconomic_data )
     
         # Regularization term for population limits
         cost_popBounds = tf.reduce_sum(tf.where(self.mapped_Population > self.OptimizationData.popBoundHigh,
@@ -246,9 +269,7 @@ class ModelGeo(InputData, tf.keras.Model):
         cost_distance = self.cost_distances()
         
         # Add varience in education mapped_Education_population
-        education_variance = tf.math.reduce_mean(
-            tf.math.reduce_variance( self.mapped_Education, axis=0 )
-            )
+        education_variance = tf.math.reduce_mean(tf.math.reduce_variance( self.mapped_Education, axis=0 ))
         
         # Input costs into the OptimizationData model and save them
         self.OptimizationData.saveCosts(SES_variance, cost_popBounds, cost_distance, education_variance)
@@ -388,7 +409,7 @@ class ModelGeo(InputData, tf.keras.Model):
     def initialize_norm(self):
         # Normalizes the weights such that relatively all costs start at 1. 
         # Then it multplies the normalized weights by the assigned weights
-        self.OptimizationData.norm_SESvariance = tf.math.reduce_variance( self(self.InputData.Socioeconomic_population) )
+        self.OptimizationData.norm_SESvariance = tf.math.reduce_variance( self.mapped_Socioeconomic_data ) 
         self.OptimizationData.norm_distance = self.cost_distances()
         self.OptimizationData.norm_education = tf.math.reduce_mean( tf.math.reduce_variance( self.mapped_Education, axis=0 ) )
         
@@ -422,7 +443,7 @@ class ModelGeo(InputData, tf.keras.Model):
         try: self.distances
         except: raise Exception("Distances have not been initialised yet!")
         
-        return tf.reduce_sum(tf.reduce_mean( self.distances * self.neighbourhood_Map , axis=1))
+        return tf.reduce_sum(self.mean_distances)
         
         
     @tf.function
@@ -500,11 +521,13 @@ class ModelGeo(InputData, tf.keras.Model):
         for i in range(self.Communities.N):
             labels[index[i]]=i
             com_Neighbours.append(list(self.GeometryNeighbours[index[i]]))
-            com_SES.append(self.InputData.Socioeconomic_population[index[i]].numpy())
+            #com_SES.append(self.InputData.Socioeconomic_population[index[i]].numpy())
+            com_SES.append(self.Socioeconomic_data[index[i]].numpy())
             com_index.append([index[i].numpy()])        
                     
         # let the communities spread out to nearest neighbours
-        avg_SES = tf.reduce_mean(self.InputData.Socioeconomic_population)
+        #avg_SES = tf.reduce_mean(self.InputData.Socioeconomic_population)
+        avg_SES = tf.reduce_mean(self.Socioeconomic_data)
         iteration_stuck = 0
         none_indices_old = []
         while True:
@@ -515,8 +538,10 @@ class ModelGeo(InputData, tf.keras.Model):
                 index_current = com_index[i]
                 
                 # calculate the SES values of of adding the neighbourhoods to the list 
-                SES_current = tf.reduce_sum(tf.gather(self.InputData.Socioeconomic_population, index_current))
-                SES_neighbour = tf.gather(self.InputData.Socioeconomic_population, com_Neighbours[i])
+                #SES_current = tf.reduce_sum(tf.gather(self.InputData.Socioeconomic_population, index_current))
+                #SES_neighbour = tf.gather(self.InputData.Socioeconomic_population, com_Neighbours[i])
+                SES_current = tf.reduce_sum(tf.gather(self.Socioeconomic_data, index_current))
+                SES_neighbour = tf.gather(self.Socioeconomic_data, com_Neighbours[i])
                 SES_option=(np.abs((SES_current + SES_neighbour - avg_SES).numpy()))
                     
                 # choose the best SES value
@@ -531,7 +556,8 @@ class ModelGeo(InputData, tf.keras.Model):
                 if labels[index_decision] is None: 
                     labels[index_decision] = i
                     com_Neighbours[i] += list(self.GeometryNeighbours[index_decision])
-                    com_SES[i] +=  tf.gather(self.InputData.Socioeconomic_population, index_decision).numpy()
+                    #com_SES[i] +=  tf.gather(self.InputData.Socioeconomic_population, index_decision).numpy()
+                    com_SES[i] +=  tf.gather(self.Socioeconomic_data, index_decision).numpy()
                     com_index[i].append(index_decision)
                     
                 # delete neighbours that are within the community

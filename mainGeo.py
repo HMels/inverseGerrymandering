@@ -41,7 +41,8 @@ with open("inputData.pickle", "rb") as f:
 
 #%% Define model
 # trying to get 10000 households per community
-N_communities = 10#int(np.sum(inputData.Population)/10000) # 20 # Number of communities
+N_communities = 10 # Number of communities
+#N_communities = 98
 N_iterations = 100 # Number of iterations for training
 
 # Define optimization algorithm and learning rate
@@ -53,6 +54,7 @@ model = ModelGeo(inputData, N_communities, N_iterations, optimizer)
 Population_initial = model.mapped_Population.numpy()
 SES_initial = model.mapped_Socioeconomic_data.numpy()
 Education_initial = model.mapped_Education.numpy()
+Distances_initial = model.mean_distances.numpy()
 
 print("INITIAL VALUES: ")
 model.print_summary()
@@ -175,7 +177,7 @@ ax4.set_title('Distribution of population sizes')
 
 
 
-#%% save all plots
+#%% save all plots and variables
 if True:
     ax01.set_title('')
     ax02.set_title('')
@@ -183,8 +185,10 @@ if True:
     ax2.set_title('')
     fig3.suptitle('')
     ax4.set_title('')
-    ax4.get_legend().remove()
-    ax3[2].get_legend().remove()
+    try: ax4.get_legend().remove()
+    except: pass
+    try: ax3[2].get_legend().remove()
+    except: pass
     
     fig01.tight_layout()
     fig02.tight_layout()
@@ -200,3 +204,17 @@ if True:
     fig2.savefig(fname="Output/04_SESbarplot")
     fig3.savefig(fname="Output/04_Educationbarplot")
     fig4.savefig(fname="Output/04_Populationbarplot")
+    
+
+if True:
+    # initial
+    np.savez('SavedParameters/Population_initial.npz', my_array=Population_initial)
+    np.savez('SavedParameters/SES_initial.npz', my_array=SES_initial)
+    np.savez('SavedParameters/Education_initial.npz', my_array=Education_initial)
+    np.savez('SavedParameters/Distances_initial.npz', my_array=Distances_initial)
+    
+    # eventual
+    np.savez('SavedParameters/Population.npz', my_array=model.mapped_Population.numpy())
+    np.savez('SavedParameters/SES.npz', my_array=model.Communities.Socioeconomic_data.numpy())
+    np.savez('SavedParameters/Education.npz', my_array=model.mapped_Education.numpy())
+    np.savez('SavedParameters/Distances.npz', my_array=model.mean_distances.numpy())
