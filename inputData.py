@@ -222,17 +222,23 @@ class InputData:
         Loads all the buurten in a wijk (via the variable buurten_in_wijken) and then 
         calculates the average center_coordinates of that wijk
         '''
-        try: self.center_coordinates
+        try: self.Coordinates
         except: raise Exception("First load the center coordinates and other geographical data via self.load_geo_data!")
         
         wijk_centers=[]
         neighbourhood_codes=tf.Variable(self.neighbourhood_codes)
         for wijk_codes in self.buurten_in_wijken:
-            centers=0
+            centerx, centery = 0,0
+            counter=0
             for buurt_codes in wijk_codes:
                 i = tf.where(neighbourhood_codes==buurt_codes)
-                centers+=self.center_coordinates[i[0][0]]
-            wijk_centers.append(centers/len(wijk_codes))
+                if len(i)!=0 and len(self.Coordinates[i[0][0]])==2:
+                    centers=self.Coordinates[i[0][0]].numpy()
+                    centerx+=centers[0]
+                    centery+=centers[1]
+                    counter+=1
+            if counter!=0: #check if buurten have been loaded
+                wijk_centers.append(np.array([centerx,centery])/counter)
         self.wijk_centers=tf.Variable(wijk_centers)
             
         
@@ -268,20 +274,42 @@ class InputData:
         
         # Load data from geopackage file using geopandas
         gdf = gpd.read_file(filename)
-        gdf = gdf.to_crs('EPSG:4326') # Convert to longlat
+        gdf = gdf.to_crs('3857') # Convert to latlong
         gdf = gdf.explode(index_parts=True)  # Convert multipolygon to polygon
+        '''
         coords_list = [list(x.exterior.coords) for x in gdf.geometry] # Make a list out of it
 
         # Convert polygons to center coordinates and store as class variable
         center_coordinates = []
         for coords in coords_list:
             center_coordinates.append(np.average(coords, axis=0))
-        center_coordinates = np.array(center_coordinates)
-        center_coordinates[:, [0, 1]] = center_coordinates[:, [1, 0]]
+        '''
+        #center_coordinates = []
+        #geometry_gdf = self.gdf.geometry.tolist()
+        #for geom in geometry_gdf:
+            
         
-        self.center_coordinates = tf.Variable(center_coordinates, trainable=False, dtype=tf.float32)
+        #center_coordinates = np.array(center_coordinates)
+        #center_coordinates[:, [0, 1]] = center_coordinates[:, [1, 0]] # not needed as 3857 fixes everything
+        
+        #self.center_coordinates = tf.Variable(center_coordinates, trainable=False, dtype=tf.float32)
         self.gdf = gdf
+        
 
+    def mirrorPolygons(self):
+        # switches the coordinates of the polygons such that it is in latlon format
+        mirroredPolygons = []
+        for polygon in self.Geometry:
+            # Loop through all coordinates and store their latitude and longitude in a grid
+            mirroredPolygon = np.zeros((len(polygon.exterior.coords), 2), dtype=np.float32)
+            for i, coord in enumerate(polygon.exterior.coords):
+                loc = np.zeros(2, dtype=np.float32)
+                loc[0] = coord[1]
+                loc[1] = coord[0]
+                mirroredPolygon[i, :] = loc
+            MappedPolygon = Polygon(mirroredPolygon)
+            mirroredPolygons.append(MappedPolygon)
+        self.Geometry = mirroredPolygons
 
     def map2grid(self, latlon0):
         """
@@ -307,7 +335,6 @@ class InputData:
             loc[1] = distance.distance(latlon0, [latlon0[0], self.Coordinates[i, 1]]).m
             loc[1] = loc[1] if (latlon0[1] < self.Coordinates[i, 1]) else -loc[1]
             Locations[i, :] = loc        
-        self.Locations = tf.Variable(Locations, trainable=False, dtype=tf.float32)
             
         # Loop through all wijk_centers and store their latitude and longitude in a grid
         wijk_centers = np.zeros(self.wijk_centers.shape, dtype=np.float32)
@@ -319,6 +346,8 @@ class InputData:
             loc[1] = distance.distance(latlon0, [latlon0[0], self.wijk_centers[i, 1]]).m
             loc[1] = loc[1] if (latlon0[1] < self.wijk_centers[i, 1]) else -loc[1]
             wijk_centers[i, :] = loc
+            
+        self.Locations = tf.Variable(Locations, trainable=False, dtype=tf.float32)
         self.wijk_centers = tf.Variable(wijk_centers, trainable=False, dtype=tf.float32)
         
         
@@ -342,15 +371,14 @@ class InputData:
         
         MappedPolygons = []
         for polygon in self.Geometry:
-            #polygon = Poly.values
             # Loop through all coordinates and store their latitude and longitude in a grid
             MappedCoordinates = np.zeros((len(polygon.exterior.coords), 2), dtype=np.float32)
             for i, coord in enumerate(polygon.exterior.coords):
                 loc = np.zeros(2, dtype=np.float32)
-                loc[0] = distance.distance(latlon0, [coord[1], latlon0[1]]).m
-                loc[0] = loc[0] if (latlon0[0] < coord[1]) else -loc[0]
-                loc[1] = distance.distance(latlon0, [latlon0[0], coord[0]]).m
-                loc[1] = loc[1] if (latlon0[1] < coord[0]) else -loc[1]
+                loc[0] = distance.distance(latlon0, [latlon0[0], coord[1]]).m
+                loc[0] = loc[0] if (latlon0[0] < coord[0]) else -loc[0]
+                loc[1] = distance.distance(latlon0, [coord[0], latlon0[1]]).m
+                loc[1] = loc[1] if (latlon0[1] < coord[1]) else -loc[1]
                 MappedCoordinates[i, :] = loc
             MappedPolygon = Polygon(MappedCoordinates)
             MappedPolygons.append(MappedPolygon)
@@ -404,7 +432,12 @@ class InputData:
         for i, code in enumerate(self.neighbourhood_codes):
             index = tf.where(self.gdf.buurtcode == code).numpy()[0][0]
             Geometry.append(geometry_gdf[index])
-            Coordinates.append(self.center_coordinates[index])
+            #Coordinates.append(self.center_coordinates[index])
+            # load the center coordinates
+            meanx=np.mean(geometry_gdf[index].exterior.xy[0])
+            meany=np.mean(geometry_gdf[index].exterior.xy[1])
+            Coordinates.append([meanx,meany])
+            
             indices.append(i)
             truefalse=True
             

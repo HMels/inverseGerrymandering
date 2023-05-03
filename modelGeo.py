@@ -621,24 +621,22 @@ class ModelGeo(InputData, tf.keras.Model):
             
         if extent is None:
             geominx = min(self.InputData.GeometryGrid[0].exterior.xy[0])
-            geominy = max(self.InputData.GeometryGrid[0].exterior.xy[0])
-            geomaxx = min(self.InputData.GeometryGrid[0].exterior.xy[1])
+            geomaxx = max(self.InputData.GeometryGrid[0].exterior.xy[0])
+            geominy = min(self.InputData.GeometryGrid[0].exterior.xy[1])
             geomaxy = max(self.InputData.GeometryGrid[0].exterior.xy[1])
             for polygon in self.InputData.GeometryGrid:
                 geominx = min( [min(polygon.exterior.xy[0]), geominx] )
-                geominy = max( [max(polygon.exterior.xy[0]), geominy] )
-                geomaxx = min( [min(polygon.exterior.xy[1]), geomaxx] )
+                geomaxx = max( [max(polygon.exterior.xy[0]), geomaxx] )
+                geominy = min( [min(polygon.exterior.xy[1]), geominy] )
                 geomaxy = max( [max(polygon.exterior.xy[1]), geomaxy] )
-            extent = [geominx-200, geominy-200, geomaxx+200, geomaxy+200]
-            
-        print(extent)
-    
+            extent = [geominx-200, geomaxx+200, geominy-200, geomaxy+200]
+                        
         # Create plot
         fig, ax = plt.subplots(figsize=(5, 4))   
         for i, polygon in enumerate(self.InputData.GeometryGrid):
             patch = PolygonPatch(np.array(polygon.exterior.xy).T, facecolor=colour[i], alpha=0.5)
             ax.add_patch(patch)
-    
+                
         if print_labels:
             colors = [cdict[i] for i in range(self.Communities.N)]
             x, y = np.meshgrid(extent[1]*12/16, np.linspace(extent[2]+(extent[3]-extent[2])*2/4,
