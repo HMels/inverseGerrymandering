@@ -29,6 +29,7 @@ inputData = InputData("Data/SES_WOA_scores_per_wijk_en_buurt_25042023_160857.csv
 # Source: https://www.atlasleefomgeving.nl/kaarten
 # algemene kaarten: Wijk- en buurt informatie
 inputData.load_geo_data('Data/wijkenbuurten_2022_v1.GPKG')
+inputData.load_wijken_centers()
 inputData.buurt_filter(devmode=True)
 
 ## TODO for some reason a lot of data gets deleted somewhere here in multiple occasions

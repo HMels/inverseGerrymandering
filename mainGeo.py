@@ -6,8 +6,8 @@ Created on Wed Mar  8 19:41:17 2023
 """
 import pickle
 import numpy as np
-import tensorflow as tf
 import matplotlib.pyplot as plt
+import tensorflow as tf
 
 from modelGeo import ModelGeo
 
@@ -40,17 +40,24 @@ with open("inputData.pickle", "rb") as f:
 
 
 #%% Define model
-# trying to get 10000 households per community
-N_communities = 10 # Number of communities
-#N_communities = 98
-N_iterations = 100 # Number of iterations for training
+N_communities=10
+N_iterations=100
 
-# Define optimization algorithm and learning rate
-optimizer = tf.keras.optimizers.Adamax(learning_rate=.05)
-model = ModelGeo(inputData, N_communities, N_iterations, optimizer)
+model = ModelGeo(inputData, N_communities=N_communities)
 
 
-#%% plot initial state
+#%% initialise the labels via the algoirthm described in the paper
+model.initialize_labels()
+    
+# plot the initial state
+cdict = create_color_dict(N_communities)
+fig01, ax01 = model.plot_communities(cdict, title='Communities Before Refinement')
+
+
+#%% define the optimalisation / refinement process
+model.initialise_optimisation(weights=[8,35,30,35], LN=[1,2,2,3], N_iterations=N_iterations,
+                              population_bounds=[0.9, 1.1])
+
 Population_initial = model.mapped_Population.numpy()
 SES_initial = model.mapped_Socioeconomic_data.numpy()
 Education_initial = model.mapped_Education.numpy()
@@ -58,12 +65,9 @@ Distances_initial = model.mean_distances.numpy()
 
 print("INITIAL VALUES: ")
 model.print_summary()
-
-cdict = create_color_dict(N_communities)
-fig01, ax01 = model.plot_communities(cdict, title='Communities Before Refinement')
     
 
-#%% Train the model for Niterations iterations
+#%% Refine the model for Niterations iterations
 print("OPTIMISING...")
 model.refine(N_iterations, temperature=.05)
 model.applyMapCommunities()

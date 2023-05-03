@@ -20,13 +20,13 @@ from shapely.geometry import Polygon, MultiLineString, MultiPoint
 
 
 class InputData:
-    def __init__(self, path, buurten=True):
+    def __init__(self, path, buurtenOnOff=True):
         """
         Initializes an instance of the class and loads socio-economic data from a CSV file.
     
         Args:
             path (str): The path to the CSV file containing the socio-economic data.
-            buurten (bool): True if you only need to load the buurten, False if you need wijken
+            buurtenOnOff (bool): True if you only need to load the buurten, False if you need wijken
         
         Raises:
             FileNotFoundError: If the specified file path does not exist.
@@ -71,29 +71,29 @@ class InputData:
         
         # filter buurtcodes that don't start with BU
         indices = []
-        self.wijk_coordinates = []
-        if buurten:
-            for i, codes in enumerate(self.neighbourhood_codes):
-                if codes[:2]=="BU":
-                    indices.append(i)
-                if codes[:2]=="WK":
-                    self.wijk_coordinates.append()
-                    ##TODO add something here that adds the locations of the wijken
-        else:
-            for i, codes in enumerate(self.neighbourhood_codes):
-                if codes[:2]=="WK":
-                    indices.append(i)
+        self.buurten_in_wijken = []
+        self.buurtenOnOff = buurtenOnOff
+        marker="BU" if self.buurtenOnOff else "WK"
+        for i, codes in enumerate(self.neighbourhood_codes):
+            if codes[:2]==marker:
+                indices.append(i)
+            # we will loop over the following buurten and add their codes such that we know which
+            # buurten belong to which wijken
+            if codes[:2]=="WK":
+                j=i+1
+                buurten_in_wijken = []
+                while True:
+                    if j==self.N or self.neighbourhood_codes[j][:2]=="WK": break
+                    if self.neighbourhood_codes[j][:2]=="BU":
+                        buurten_in_wijken.append(self.neighbourhood_codes[j])
+                    j+=1
+                if len(buurten_in_wijken)!=0:
+                    self.buurten_in_wijken.append(buurten_in_wijken)
+                
         self.gather(indices)
         
-        
+    '''    
     def add_path(self, path):
-        '''
-        Adds data from the new path to the parameters.
-
-        Args:
-            path (str): The path to the CSV file containing the socio-economic data.
-
-        '''
         # Load data from CSV file using pandas
         data = pd.read_csv(path, delimiter=';', quotechar='"', na_values='       .')
         
@@ -133,7 +133,7 @@ class InputData:
                 
         self.gather(indices)
         self.N = self.Socioeconomic_data.shape[0]
-        
+    ''' 
         
     #@property
     #def Socioeconomic_population(self):
@@ -216,6 +216,26 @@ class InputData:
         self.pop_sex = tf.Variable(pop_sex.to_numpy(), dtype=tf.int32, trainable=False)
         self.pop_age = tf.Variable(pop_age.to_numpy(), dtype=tf.int32, trainable=False)   
         
+        
+    def load_wijken_centers(self):
+        '''
+        Loads all the buurten in a wijk (via the variable buurten_in_wijken) and then 
+        calculates the average center_coordinates of that wijk
+        '''
+        try: self.center_coordinates
+        except: raise Exception("First load the center coordinates and other geographical data via self.load_geo_data!")
+        
+        wijk_centers=[]
+        neighbourhood_codes=tf.Variable(self.neighbourhood_codes)
+        for wijk_codes in self.buurten_in_wijken:
+            centers=0
+            for buurt_codes in wijk_codes:
+                i = tf.where(neighbourhood_codes==buurt_codes)
+                centers+=self.center_coordinates[i[0][0]]
+            wijk_centers.append(centers/len(wijk_codes))
+        self.wijk_centers=tf.Variable(wijk_centers)
+            
+        
     
     def load_geo_data(self, filename):
         """
@@ -286,9 +306,20 @@ class InputData:
             loc[0] = loc[0] if (latlon0[0] < self.Coordinates[i, 0]) else -loc[0]
             loc[1] = distance.distance(latlon0, [latlon0[0], self.Coordinates[i, 1]]).m
             loc[1] = loc[1] if (latlon0[1] < self.Coordinates[i, 1]) else -loc[1]
-            Locations[i, :] = loc
-
+            Locations[i, :] = loc        
         self.Locations = tf.Variable(Locations, trainable=False, dtype=tf.float32)
+            
+        # Loop through all wijk_centers and store their latitude and longitude in a grid
+        wijk_centers = np.zeros(self.wijk_centers.shape, dtype=np.float32)
+        for i in range(self.wijk_centers.shape[0]):
+            # for the wijk centers
+            loc = np.zeros(2, dtype=np.float32)
+            loc[0] = distance.distance(latlon0, [self.wijk_centers[i, 0], latlon0[1]]).m
+            loc[0] = loc[0] if (latlon0[0] < self.wijk_centers[i, 0]) else -loc[0]
+            loc[1] = distance.distance(latlon0, [latlon0[0], self.wijk_centers[i, 1]]).m
+            loc[1] = loc[1] if (latlon0[1] < self.wijk_centers[i, 1]) else -loc[1]
+            wijk_centers[i, :] = loc
+        self.wijk_centers = tf.Variable(wijk_centers, trainable=False, dtype=tf.float32)
         
         
     def polygon2grid(self, latlon0):

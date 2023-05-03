@@ -20,7 +20,7 @@ from communities import Communities
 from optimizationData import OptimizationData
 
 class ModelGeo(InputData, tf.keras.Model):
-    def __init__(self, InputData, N_communities, N_iterations, optimizer):
+    def __init__(self, InputData, N_communities):
         """
         Initializes the Dataset object with given socioeconomic data, population size, number of communities, and neighbourhood locations.
     
@@ -29,10 +29,6 @@ class ModelGeo(InputData, tf.keras.Model):
                 (InputData.N x N_features) array containing the socioeconomic data of the initial neighbourhoods.
             N_communities (int): 
                 The number of communities to end up with.
-            N_iterations (ubt):
-                The number of iterations of the optimizer
-            optimizer (TensorFlow optimizer):
-                The optimizer that will be used by the optimization
         
         Raises:
             Exception: If the number of new communities is greater than the number of neighbourhoods.
@@ -83,27 +79,47 @@ class ModelGeo(InputData, tf.keras.Model):
         
         # Initialize communities
         self.Communities = Communities(N_communities)
-        self.Communities.initialize_community_Locations(self.Communities.N, self.InputData.Locations)
+        #self.Communities.initialize_community_Locations(self.Communities.N, self.InputData.Locations)
+        self.Communities.initialize_community_Locations(self.Communities.N, self.InputData.wijk_centers)
         
         # Initialize the distance matrix and the economic values
         self.initialize_distances()
-        self.initialize_labels()
-        
+
+
+    def initialise_optimisation(self, weights=[8,35,30,35],  LN=[1,2,2,3], N_iterations=50, population_bounds=[0.9, 1.1]):  
+        '''
+        Initialises the optimisation algoriths.
+
+        Parameters
+        ----------
+        weights : list of int, optional
+            A list of the weights. Respectively, SESvariance, PopBounds, distance.. The default is [8,35,30,35].
+        LN : list of int, optional
+            The regularization N powers. Respectively, SESvariance, PopBounds, distance. The default is [1,2,2,3].
+        N_iterations : int, optional
+            The number of iterations to run the optimizer. The default is 50.
+        population_bounds : int list, optional
+            The cost due to the number of individuals in each community. The default is [0.9, 1.1].
+
+        Returns
+        -------
+        None.
+
+        '''
         # initialise weights
         # ORDER OF WEIGHTS: SES variance, Pop bounds, Distance, Education
-        self.OptimizationData = OptimizationData(weights=[8,35,30,35], N_iterations=N_iterations,
-                                                 LN=[1,2,2,3], optimizer=optimizer)
+        self.OptimizationData = OptimizationData(weights=weights, N_iterations=N_iterations, LN=LN)
         
         # Initialize population parameters
         self.tot_pop = tf.reduce_sum(self.InputData.Population)
         self.avg_pop = self.tot_pop / self.Communities.N # Average population size
-        self.OptimizationData.initialize_popBoundaries(self.avg_pop, population_bounds=[0.9, 1.1])
+        self.OptimizationData.initialize_popBoundaries(self.avg_pop, population_bounds=population_bounds)
         
         # costs initialization 
         self.initialize_norm()
         self.cost_fn()
         self.OptimizationData.storeCosts()
-        self.OptimizationData.printCosts(text="Initial state of Costs:")
+        self.OptimizationData.printCosts(text="Initial state of Costs:")  
         
     
     @property
@@ -481,7 +497,7 @@ class ModelGeo(InputData, tf.keras.Model):
     
     def initialize_labels(self):
         '''
-        Initialised the labels via:
+        Initialised the labels via an algorithm that lets the communities spread out like a virus:
             1. The neighbourhoods closest to the community centers will be initialised
                 as those communities. The rest will be initiated with a New Label
             2. The model iterates over the communities and the adjecent neighbours of 
@@ -614,6 +630,8 @@ class ModelGeo(InputData, tf.keras.Model):
                 geomaxx = min( [min(polygon.exterior.xy[1]), geomaxx] )
                 geomaxy = max( [max(polygon.exterior.xy[1]), geomaxy] )
             extent = [geominx-200, geominy-200, geomaxx+200, geomaxy+200]
+            
+        print(extent)
     
         # Create plot
         fig, ax = plt.subplots(figsize=(5, 4))   

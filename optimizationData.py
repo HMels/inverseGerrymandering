@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt
 
 
 class OptimizationData:
-    def __init__(self, weights=[10,1,1,1], N_iterations=100, LN=[1,1,1,1], optimizer=tf.keras.optimizers.Adamax(learning_rate=.1)):
+    def __init__(self, weights=[10,1,1,1], N_iterations=100, LN=[1,1,1,1]):
         '''
         Initializes an instance of the OptimizationData class.
 
@@ -32,9 +32,7 @@ class OptimizationData:
             The number of iterations to perform in the optimization process. The default is 100.
         LN : list of int, optional
             The regularization N powers. The default is [1,2,1,1].
-        optimizer : TensorFlow optimizer, optional
-            The TensorFlow optimizer to use in the optimization process. The default is tf.keras.optimizers.Adamax(learning_rate=.1).
-
+            
         Attributes
         ----------
         N_iterations : int
@@ -75,7 +73,6 @@ class OptimizationData:
         self.norm_education = 1
         
         self.LN = LN # the reguralization N powers
-        self.optimizer = optimizer
         
         
     @tf.function
