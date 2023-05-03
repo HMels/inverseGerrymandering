@@ -46,7 +46,7 @@ N_iterations=100
 model = ModelGeo(inputData, N_communities=N_communities)
 
 
-#%% initialise the labels via the algoirthm described in the paper
+#%% initialise the labels via the algorithm described in the paper
 model.initialize_labels()
     
 # plot the initial state
@@ -110,7 +110,7 @@ ax2.get_yaxis().set_visible(False)
 
 # setting labels
 ax2.legend(loc='upper right')
-ax2.set_xlabel('Socio-economic score')
+ax2.set_xlabel('Average socio-economic score')
 ax2.get_yaxis().set_visible(False)
 ax2.set_title('Distribution of the economic data by population')
 plt.show()
