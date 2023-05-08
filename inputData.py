@@ -16,16 +16,17 @@ import geopandas as gpd
 import numpy as np
 from geopy import distance
 import tensorflow as tf
-from shapely.geometry import Polygon
+from shapely.geometry import Polygon, MultiLineString, MultiPoint
 
 
 class InputData:
-    def __init__(self, path):
+    def __init__(self, path, buurtenOnOff=True):
         """
         Initializes an instance of the class and loads socio-economic data from a CSV file.
     
         Args:
             path (str): The path to the CSV file containing the socio-economic data.
+            buurtenOnOff (bool): True if you only need to load the buurten, False if you need wijken
         
         Raises:
             FileNotFoundError: If the specified file path does not exist.
@@ -53,27 +54,46 @@ class InputData:
 
         # Extract relevant variables and store as class variables
         self.neighbourhoods = data[:,1]  # neighbourhood names
-        self.Socioeconomic_data = tf.Variable(np.array(data[:,3].tolist()).astype(np.float32)[:],
+        self.neighbourhood_codes = data[:,2]  # neighbourhood codes
+        self.Population = tf.Variable(np.array(data[:,3].tolist()).astype(np.float32)[:],
+                                      trainable=False, dtype=tf.float32) # Number of households per neighbourhood
+        self.Education = tf.transpose(tf.Variable([data[:,4], data[:,5], data[:,6]],
+                                                  trainable=False, dtype=tf.float32)) # education levels Low, Medium, High
+        self.Socioeconomic_data = tf.Variable(np.array(data[:,7].tolist()).astype(np.float32)[:],
                                               trainable=False, dtype=tf.float32) # Socio-economic value of the region
-        self.Population = tf.Variable(np.array(data[:,2].tolist()).astype(np.float32)[:],
-                                           trainable=False, dtype=tf.float32) # Number of households per neighbourhood
-        self.Locations = None      # locations yet to be 
+        
+        # data yet to be loaded
+        self.Locations = None      
+        self.GeometryGrid = None
+        self.Geometry = None
+        
         self.N = self.Socioeconomic_data.shape[0]
         
+        # filter buurtcodes that don't start with BU
+        indices = []
+        self.buurten_in_wijken = []
+        self.buurtenOnOff = buurtenOnOff
+        marker="BU" if self.buurtenOnOff else "WK"
+        for i, codes in enumerate(self.neighbourhood_codes):
+            if codes[:2]==marker:
+                indices.append(i)
+            # we will loop over the following buurten and add their codes such that we know which
+            # buurten belong to which wijken
+            if codes[:2]=="WK":
+                j=i+1
+                buurten_in_wijken = []
+                while True:
+                    if j==self.N or self.neighbourhood_codes[j][:2]=="WK": break
+                    if self.neighbourhood_codes[j][:2]=="BU":
+                        buurten_in_wijken.append(self.neighbourhood_codes[j])
+                    j+=1
+                if len(buurten_in_wijken)!=0:
+                    self.buurten_in_wijken.append(buurten_in_wijken)
+                
+        self.gather(indices)
         
-    @property
-    def Socioeconomic_population(self):
-        '''
-        Returns
-        -------
-        tf.float32
-            The socioeconomic data multiplied by the population to get the actual socioeconomic value.
-
-        '''
-        return self.Socioeconomic_data * self.Population
-        
-        
-    def reload_path(self, path):
+    '''    
+    def add_path(self, path):
         # Load data from CSV file using pandas
         data = pd.read_csv(path, delimiter=';', quotechar='"', na_values='       .')
         
@@ -81,15 +101,146 @@ class InputData:
         data = data.replace('       .', float('nan'))
         data.dropna(inplace=True)
         data = data.values
-
+        
         # Extract relevant variables and store as class variables
-        self.neighbourhoods = np.array(data[:,1])  # neighbourhood names
-        self.Socioeconomic_data = tf.Variable(np.array(data[:,3].tolist()).astype(np.float32)[:],
-                                              trainable=False, dtype=tf.float32) # Socio-economic value of the region
-        self.Population = tf.Variable(np.array(data[:,2].tolist()).astype(np.float32)[:],
-                                           trainable=False, dtype=tf.float32) # Number of households per neighbourhood
-        self.Locations = None      # locations yet to be 
+        self.neighbourhoods = np.concatenate([
+            self.neighbourhoods, data[:,1] ]) # neighbourhood names
+        self.neighbourhood_codes = np.concatenate([
+            self.neighbourhood_codes, data[:,2] ]) # neighbourhood codes
+        Population = np.array(data[:,3].tolist()).astype(np.float32)[:]        
+        self.Population = tf.Variable(
+            np.concatenate([self.Population.numpy(), Population], axis=0)
+            , trainable=False, dtype=tf.float32) # Number of households per neighbourhood
+        Education = tf.transpose(tf.Variable([data[:,4], data[:,5], data[:,6]], trainable=False, dtype=tf.float32))
+        self.Education = tf.Variable(
+            np.concatenate([self.Education, Education])
+            , trainable=False, dtype=tf.float32)# education levels Low, Medium, High
+        Socioeconomic_data = np.array(data[:,7].tolist()).astype(np.float32)[:]
+        self.Socioeconomic_data = tf.Variable(
+            np.concatenate([self.Socioeconomic_data, Socioeconomic_data])
+            , trainable=False, dtype=tf.float32) # Socio-economic value of the region
+                
+        # filter buurtcodes that don't start with BU
+        indices = []
+        codes_added = [] # a list of codes that are already there, to prevent doubles
+        for i, codes in enumerate(self.neighbourhood_codes):
+            if codes[:2]=="BU":
+                if codes not in codes_added:
+                    indices.append(i)
+                    codes_added.append(codes)
+                else:
+                    print("Code "+codes+" was already in dataset and will be ignored.")
+                
+        self.gather(indices)
         self.N = self.Socioeconomic_data.shape[0]
+    ''' 
+        
+    #@property
+    #def Socioeconomic_population(self):
+    # apparently this is not how SES values work 
+        # returns a tf.float32 
+        # The socioeconomic data multiplied by the population to get the actual socioeconomic value.
+    #    return self.Socioeconomic_data * self.Population
+    
+    
+    @property
+    def Education_population(self):
+        # returns a tf.float32 
+        # The Education data multiplied by the population to get the actual socioeconomic value.
+        return tf.multiply(self.Education/100, tf.expand_dims(self.Population, axis=1))
+        
+    
+    
+    def gather(self, indices):
+        '''
+        Gathers the indices inputted for all properties 
+        '''
+        if len(indices)==0: raise Exception("No indices inputted to be gathered")
+        
+        neighbourhoods=[]
+        neighbourhood_codes=[]
+        Population=[]
+        Education=[]
+        Socioeconomic_data=[]
+        for i in indices:
+            neighbourhoods.append(self.neighbourhoods[i])
+            neighbourhood_codes.append(self.neighbourhood_codes[i])
+            Population.append(self.Population[i].numpy())
+            Education.append(self.Education[i].numpy())
+            Socioeconomic_data.append(self.Socioeconomic_data[i].numpy())
+                
+        self.neighbourhoods = neighbourhoods
+        self.neighbourhood_codes = neighbourhood_codes
+        self.Population = tf.Variable(Population, trainable=False, dtype=tf.float32)#tf.gather(self.Population, indices)
+        self.Education = tf.Variable(Education, trainable=False, dtype=tf.float32)#tf.gather(self.Education, indices)
+        self.Socioeconomic_data = tf.Variable(Socioeconomic_data, trainable=False, dtype=tf.float32)#tf.gather(self.Socioeconomic_data, indices)        
+        
+        ##TODO add neighbours here if initiated
+        
+        
+    def load_miscData(self, path):
+        """
+        Loads the miscalenous data from the file that can be downloaded from  
+        https://www.cbs.nl/nl-nl/maatwerk/2011/48/kerncijfers-wijken-en-buurten-2011
+
+        Parameters
+        ----------
+        path : str
+            The path from which to load the file.
+
+        """
+        # read in the file using pandas
+        dtypes = {'GM_CODE': str, 'WK_CODE': str, 'BU_CODE': str}
+        df = pd.read_excel(path, dtype=dtypes)
+        
+        # iterate over the neighbourhood codes list and extract the rows corresponding to each neighbourhood
+        dfs = []
+        for code in self.neighbourhood_codes:
+            gm_code = code[2:6]
+            wk_code = code[6:8]
+            bu_code = code[8:]
+            df_neighbourhood = df[(df['RECS'] == 'Buurt') &
+                                  (df['GM_CODE'] == gm_code) &
+                                  (df['WK_CODE'] == wk_code) &
+                                  (df['BU_CODE'] == bu_code)]
+            if len(df_neighbourhood)==0:
+                print(code,"Not found")
+            dfs.append(df_neighbourhood)
+        
+        # concatenate the dataframes and select the columns you're interested in
+        df_final = pd.concat(dfs)
+        pop_sex = df_final[['AANT_MAN', 'AANT_VROUW']]
+        pop_age = df_final[['P_00_14_JR', 'P_15_24_JR', 'P_25_44_JR', 'P_45_64_JR', 'P_65_EO_JR']]
+
+        # convert the selected columns to arrays
+        self.pop_sex = tf.Variable(pop_sex.to_numpy(), dtype=tf.int32, trainable=False)
+        self.pop_age = tf.Variable(pop_age.to_numpy(), dtype=tf.int32, trainable=False)   
+        
+        
+    def load_wijken_centers(self):
+        '''
+        Loads all the buurten in a wijk (via the variable buurten_in_wijken) and then 
+        calculates the average center_coordinates of that wijk
+        '''
+        try: self.Coordinates
+        except: raise Exception("First load the center coordinates and other geographical data via self.load_geo_data!")
+        
+        wijk_centers=[]
+        neighbourhood_codes=tf.Variable(self.neighbourhood_codes)
+        for wijk_codes in self.buurten_in_wijken:
+            centerx, centery = 0,0
+            counter=0
+            for buurt_codes in wijk_codes:
+                i = tf.where(neighbourhood_codes==buurt_codes)
+                if len(i)!=0 and len(self.Coordinates[i[0][0]])==2:
+                    centers=self.Coordinates[i[0][0]].numpy()
+                    centerx+=centers[0]
+                    centery+=centers[1]
+                    counter+=1
+            if counter!=0: #check if buurten have been loaded
+                wijk_centers.append(np.array([centerx,centery])/counter)
+        self.wijk_centers=tf.Variable(wijk_centers)
+            
         
     
     def load_geo_data(self, filename):
@@ -123,20 +274,42 @@ class InputData:
         
         # Load data from geopackage file using geopandas
         gdf = gpd.read_file(filename)
-        gdf = gdf.to_crs('EPSG:4326') # Convert to longlat
+        gdf = gdf.to_crs('3857') # Convert to latlong
         gdf = gdf.explode(index_parts=True)  # Convert multipolygon to polygon
+        '''
         coords_list = [list(x.exterior.coords) for x in gdf.geometry] # Make a list out of it
 
         # Convert polygons to center coordinates and store as class variable
         center_coordinates = []
         for coords in coords_list:
             center_coordinates.append(np.average(coords, axis=0))
-        center_coordinates = np.array(center_coordinates)
-        center_coordinates[:, [0, 1]] = center_coordinates[:, [1, 0]]
+        '''
+        #center_coordinates = []
+        #geometry_gdf = self.gdf.geometry.tolist()
+        #for geom in geometry_gdf:
+            
         
-        self.center_coordinates = tf.Variable(center_coordinates, trainable=False, dtype=tf.float32)
+        #center_coordinates = np.array(center_coordinates)
+        #center_coordinates[:, [0, 1]] = center_coordinates[:, [1, 0]] # not needed as 3857 fixes everything
+        
+        #self.center_coordinates = tf.Variable(center_coordinates, trainable=False, dtype=tf.float32)
         self.gdf = gdf
+        
 
+    def mirrorPolygons(self):
+        # switches the coordinates of the polygons such that it is in latlon format
+        mirroredPolygons = []
+        for polygon in self.Geometry:
+            # Loop through all coordinates and store their latitude and longitude in a grid
+            mirroredPolygon = np.zeros((len(polygon.exterior.coords), 2), dtype=np.float32)
+            for i, coord in enumerate(polygon.exterior.coords):
+                loc = np.zeros(2, dtype=np.float32)
+                loc[0] = coord[1]
+                loc[1] = coord[0]
+                mirroredPolygon[i, :] = loc
+            MappedPolygon = Polygon(mirroredPolygon)
+            mirroredPolygons.append(MappedPolygon)
+        self.Geometry = mirroredPolygons
 
     def map2grid(self, latlon0):
         """
@@ -161,9 +334,21 @@ class InputData:
             loc[0] = loc[0] if (latlon0[0] < self.Coordinates[i, 0]) else -loc[0]
             loc[1] = distance.distance(latlon0, [latlon0[0], self.Coordinates[i, 1]]).m
             loc[1] = loc[1] if (latlon0[1] < self.Coordinates[i, 1]) else -loc[1]
-            Locations[i, :] = loc
-
+            Locations[i, :] = loc        
+            
+        # Loop through all wijk_centers and store their latitude and longitude in a grid
+        wijk_centers = np.zeros(self.wijk_centers.shape, dtype=np.float32)
+        for i in range(self.wijk_centers.shape[0]):
+            # for the wijk centers
+            loc = np.zeros(2, dtype=np.float32)
+            loc[0] = distance.distance(latlon0, [self.wijk_centers[i, 0], latlon0[1]]).m
+            loc[0] = loc[0] if (latlon0[0] < self.wijk_centers[i, 0]) else -loc[0]
+            loc[1] = distance.distance(latlon0, [latlon0[0], self.wijk_centers[i, 1]]).m
+            loc[1] = loc[1] if (latlon0[1] < self.wijk_centers[i, 1]) else -loc[1]
+            wijk_centers[i, :] = loc
+            
         self.Locations = tf.Variable(Locations, trainable=False, dtype=tf.float32)
+        self.wijk_centers = tf.Variable(wijk_centers, trainable=False, dtype=tf.float32)
         
         
     def polygon2grid(self, latlon0):
@@ -185,16 +370,15 @@ class InputData:
         """
         
         MappedPolygons = []
-        for Poly in self.Geometry:
-            polygon = Poly.values
+        for polygon in self.Geometry:
             # Loop through all coordinates and store their latitude and longitude in a grid
-            MappedCoordinates = np.zeros((len(polygon.exterior[0].coords), 2), dtype=np.float32)
-            for i, coord in enumerate(polygon.exterior[0].coords):
+            MappedCoordinates = np.zeros((len(polygon.exterior.coords), 2), dtype=np.float32)
+            for i, coord in enumerate(polygon.exterior.coords):
                 loc = np.zeros(2, dtype=np.float32)
-                loc[0] = distance.distance(latlon0, [coord[1], latlon0[1]]).m
-                loc[0] = loc[0] if (latlon0[0] < coord[1]) else -loc[0]
-                loc[1] = distance.distance(latlon0, [latlon0[0], coord[0]]).m
-                loc[1] = loc[1] if (latlon0[1] < coord[0]) else -loc[1]
+                loc[0] = distance.distance(latlon0, [latlon0[0], coord[1]]).m
+                loc[0] = loc[0] if (latlon0[0] < coord[0]) else -loc[0]
+                loc[1] = distance.distance(latlon0, [coord[0], latlon0[1]]).m
+                loc[1] = loc[1] if (latlon0[1] < coord[1]) else -loc[1]
                 MappedCoordinates[i, :] = loc
             MappedPolygon = Polygon(MappedCoordinates)
             MappedPolygons.append(MappedPolygon)
@@ -202,15 +386,15 @@ class InputData:
         self.GeometryGrid = MappedPolygons
 
 
-    
 
-    def buurt_filter(self, loadGeometry=False):
+    def buurt_filter(self, devmode=False):
         """
         Filters the socio-economic data based on whether the neighbourhoods are present in the geopandas data and 
         stores the relevant data in class variables.
         
         Args:
-            None
+            devmode: bool
+                boolean that allows for error messages when loading buurten. Default is False.
         
         Returns:
             None
@@ -237,58 +421,95 @@ class InputData:
             present in the geopandas data. The first column represents the longitude of the center of each polygon, while 
             the second column represents its latitude.
         """
+        ## Load the shapes from buurten gdf
+        if devmode: print("WARNING: GDF CAN ONLY FIND BUURTEN AND NOT WIJKEN OR CITIES. THEREFORE, A LOT OF DATA WILL BE MISSING:")
         
-        index=[]
-        Socioeconomic_data=[]
-        Population=[]
-        neighbourhoods=[]
         Geometry=[]
-        i=0
-        print("WARNING: GDF CAN ONLY FIND BUURTEN AND NOT WIJKEN OR CITIES. THEREFORE, A LOT OF DATA WILL BE MISSING:")
-        if loadGeometry:
-            truefalse=False # used to check if the loc is found in the gdf file
-            for loc in self.neighbourhoods:
-                for buurt in range(self.gdf.buurtnaam.shape[0]):
-                    try:
-                        if self.gdf.buurtnaam[buurt][0]==loc:
-                            Geometry.append(self.gdf.geometry[buurt])
-                            break
-                    except:
-                        break
-
-            if not truefalse: # check if wijk was not found
-                print("1. Warning:",loc,"has not been found in gdf data. Check if instance should have been found")
-    
-            self.Geometry = Geometry
-        
-        for loc in self.neighbourhoods:
-            truefalse=False # used to check if the loc is found in the gdf file
-            j = 0
-            for buurt in self.gdf.buurtnaam:
-                try:
-                    if buurt==loc:
-                        truefalse=True
-                        index.append(j)
-                        Socioeconomic_data.append(self.Socioeconomic_data[i])
-                        Population.append(self.Population[i])
-                        neighbourhoods.append(self.neighbourhoods[i])
-                        break
-                    else:
-                        j+=1
-                except:
-                    break
-
-            if not truefalse: # check if wijk was not found
-                print("2. Warning:",loc,"has not been found in gdf data. Check if instance should have been found")
-    
-                i+=1
-                
+        indices=[]
+        Coordinates=[]
+        geometry_gdf = self.gdf.geometry.tolist()
+        truefalse=False # used to check if the loc is found in the gdf file
+        for i, code in enumerate(self.neighbourhood_codes):
+            index = tf.where(self.gdf.buurtcode == code).numpy()[0][0]
+            Geometry.append(geometry_gdf[index])
+            #Coordinates.append(self.center_coordinates[index])
+            # load the center coordinates
+            meanx=np.mean(geometry_gdf[index].exterior.xy[0])
+            meany=np.mean(geometry_gdf[index].exterior.xy[1])
+            Coordinates.append([meanx,meany])
             
-        # save all in arrays
-        self.Socioeconomic_data = tf.Variable(Socioeconomic_data, trainable=False, dtype=tf.float32)
-        self.Population = tf.Variable(Population, trainable=False, dtype=tf.float32)
-        self.neighbourhoods = np.array(neighbourhoods)
-        self.Coordinates = tf.gather(self.center_coordinates, index)
+            indices.append(i)
+            truefalse=True
+            
+            # error message
+            if devmode and not truefalse:
+                print("Warning:",self.neighbourhoods[i],"has not been found in gdf data. Check if instance should have been found")
+
+        self.gather(indices)
+        self.Geometry = Geometry
+        self.Coordinates = tf.Variable(Coordinates, trainable=False, dtype=tf.float32)
         self.N = self.Socioeconomic_data.shape[0]
         
         
+    def find_polygon_neighbours(self):
+        try:
+            self.GeometryGrid
+        except:
+            raise Exception("Polygons (GeometryGrid) have not been generated. Use self.polygon2grid().")
+        
+        # Loop through each polygon and find its neighbours
+        neighbours = []
+        extra_append = []
+        for i, poly_i in enumerate(self.GeometryGrid):
+            neighbours_i = []
+            
+            # Loop through each other polygon and check if it shares a common edge with poly_i
+            for j, poly_j in enumerate(self.GeometryGrid):
+                if i != j and poly_i.intersects(poly_j):
+                    if poly_i.touches(poly_j) and (
+                            isinstance(poly_i.boundary.intersection(poly_j.boundary), MultiLineString)
+                            or isinstance(poly_i.boundary.intersection(poly_j.boundary), MultiPoint)):
+                        neighbours_i.append(j)
+        
+            # if no neighbours are found, look for polygons that touch with points instead of edge
+            if len(neighbours_i)==0:
+                for j, poly_j in enumerate(self.GeometryGrid):
+                    if i != j and poly_i.intersects(poly_j):
+                        neighbours_i.append(j)
+                        extra_append.append([j, i])
+            
+            
+                # if no neighbours are found, find it via KNN
+                #if len(neighbours_i)==0:
+                # load coordinates
+                xi_coords = np.array(poly_i.exterior.xy[0].tolist())
+                yi_coords = np.array(poly_i.exterior.xy[1].tolist())
+                minDist = []
+                idx = []
+                for j, poly_j in enumerate(self.GeometryGrid): # loop over the other polygons
+                    if i!=j and not (j in neighbours_i):
+                        # load coordinates
+                        xj_coords = np.array(poly_j.exterior.xy[0].tolist()) 
+                        yj_coords = np.array(poly_j.exterior.xy[1].tolist())
+                        # calculate distance between i and j
+                        x_dist = xi_coords[:, np.newaxis] - xj_coords
+                        y_dist = yi_coords[:, np.newaxis] - yj_coords
+                        # save the minimum distance from 
+                        minDist.append( np.min(x_dist**2+y_dist**2) )
+                        idx.append(j)
+                
+                for j in np.argsort(minDist)[:2]: # we take the two closest areas and add them
+                    if idx[j] is not None:
+                        neighbours_i.append(idx[j])
+                        extra_append.append([idx[j], i])
+                    else: # raise error when no indices are found, this should not be possible
+                        raise Exception("No nearest neighbours found via KNN")
+                        
+            neighbours.append(neighbours_i)
+        
+        # in the list extra_append, which contains special cases of neighbours (only touches point or KNN)
+        # the inverse also needs to be done, the special cases need to be added to their counterparts.
+        for index in extra_append:
+            neighbours[index[0]].append(index[1])
+        
+        return np.array(neighbours, dtype=list)
