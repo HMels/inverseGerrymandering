@@ -385,7 +385,7 @@ class ModelGeo(InputData, tf.keras.Model):
             self.OptimizationData.storeCosts()   
             if i % 10 == 0:
                 # Print current loss and individual cost components
-                print("Time passed = "+str((time.time()-t)//60)+"min "+str(round(time.time()-t)%60)+"sec")
+                print("Time passed = "+str(int((time.time()-t)//60))+"min "+str(round(time.time()-t)%60)+"sec")
                 print("Step: {}, Loss: {}".format(i, label_cost.numpy()))
                 self.OptimizationData.printCosts()
                 t = time.time()
