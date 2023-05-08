@@ -40,7 +40,7 @@ with open("inputData.pickle", "rb") as f:
 
 
 #%% Define model
-N_communities=10
+N_communities= 10 # inputData.wijk_centers.shape[0] #
 N_iterations=100
 
 model = ModelGeo(inputData, N_communities=N_communities)
@@ -58,6 +58,8 @@ fig01, ax01 = model.plot_communities(cdict, title='Communities Before Refinement
 model.initialise_optimisation(weights=[8,35,30,35], LN=[1,2,2,3], N_iterations=N_iterations,
                               population_bounds=[0.9, 1.1])
 
+
+# save initial states
 Population_initial = model.mapped_Population.numpy()
 SES_initial = model.mapped_Socioeconomic_data.numpy()
 Education_initial = model.mapped_Education.numpy()
