@@ -71,7 +71,7 @@ class Communities:
         # Create the center points for the new communities
         if N_communities == N_inputData:
             # If the number of new communities is the same as the number of neighbourhoods, use the same locations
-            self.Locations = tf.Variable(InputData_Locations, trainable=False, dtype=tf.float32)
+            self.Locations = tf.Variable(InputData_Locations.numpy(), trainable=False, dtype=tf.float32)
         elif N_communities < N_inputData:
             # If the number of new communities is less than the number of neighbourhoods, initialize new locations
             self.Locations = tf.Variable(self.KMeansClustering(N_communities, InputData_Locations), trainable=False, dtype=tf.float32)

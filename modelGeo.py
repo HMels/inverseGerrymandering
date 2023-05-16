@@ -20,7 +20,7 @@ from communities import Communities
 from optimizationData import OptimizationData
 
 class ModelGeo(InputData, tf.keras.Model):
-    def __init__(self, InputData, N_communities, N_iterations, optimizer):
+    def __init__(self, InputData, N_communities):
         """
         Initializes the Dataset object with given socioeconomic data, population size, number of communities, and neighbourhood locations.
     
@@ -29,10 +29,6 @@ class ModelGeo(InputData, tf.keras.Model):
                 (InputData.N x N_features) array containing the socioeconomic data of the initial neighbourhoods.
             N_communities (int): 
                 The number of communities to end up with.
-            N_iterations (ubt):
-                The number of iterations of the optimizer
-            optimizer (TensorFlow optimizer):
-                The optimizer that will be used by the optimization
         
         Raises:
             Exception: If the number of new communities is greater than the number of neighbourhoods.
@@ -74,6 +70,7 @@ class ModelGeo(InputData, tf.keras.Model):
         #    Socioeconomic_data (numpy.ndarray): A 1D array of floats containing the socio-economic value of each neighbourhood.
         #    Locations (numpy.ndarray): A numpy array of shape (n,2) containing the mapped coordinates.
         self.InputData = InputData
+        self.Socioeconomic_data = InputData.Socioeconomic_data
         self.GeometryNeighbours = None
         
         if self.InputData.Locations is None:
@@ -82,27 +79,49 @@ class ModelGeo(InputData, tf.keras.Model):
         
         # Initialize communities
         self.Communities = Communities(N_communities)
-        self.Communities.initialize_community_Locations(self.Communities.N, self.InputData.Locations)
+        try:
+            self.Communities.initialize_community_Locations(self.Communities.N, self.InputData.wijk_centers)
+        except:
+            self.Communities.initialize_community_Locations(self.Communities.N, self.InputData.Locations)
         
         # Initialize the distance matrix and the economic values
         self.initialize_distances()
-        self.initialize_labels()
-        
+
+
+    def initialise_optimisation(self, weights=[8,35,30,35],  LN=[1,2,2,3], N_iterations=50, population_bounds=[0.9, 1.1]):  
+        '''
+        Initialises the optimisation algoriths.
+
+        Parameters
+        ----------
+        weights : list of int, optional
+            A list of the weights. Respectively, SESvariance, PopBounds, distance.. The default is [8,35,30,35].
+        LN : list of int, optional
+            The regularization N powers. Respectively, SESvariance, PopBounds, distance. The default is [1,2,2,3].
+        N_iterations : int, optional
+            The number of iterations to run the optimizer. The default is 50.
+        population_bounds : int list, optional
+            The cost due to the number of individuals in each community. The default is [0.9, 1.1].
+
+        Returns
+        -------
+        None.
+
+        '''
         # initialise weights
         # ORDER OF WEIGHTS: SES variance, Pop bounds, Distance, Education
-        self.OptimizationData = OptimizationData(weights=[8,12,6,6], N_iterations=N_iterations,
-                                                 LN=[1,1,2,2], optimizer=optimizer)
+        self.OptimizationData = OptimizationData(weights=weights, N_iterations=N_iterations, LN=LN)
         
         # Initialize population parameters
         self.tot_pop = tf.reduce_sum(self.InputData.Population)
         self.avg_pop = self.tot_pop / self.Communities.N # Average population size
-        self.OptimizationData.initialize_popBoundaries(self.avg_pop, population_bounds=[0.9, 1.1])
+        self.OptimizationData.initialize_popBoundaries(self.avg_pop, population_bounds=population_bounds)
         
         # costs initialization 
-        self.initialize_weights()
+        self.initialize_norm()
         self.cost_fn()
         self.OptimizationData.storeCosts()
-        self.OptimizationData.printCosts(text="Initial state of Costs:")
+        self.OptimizationData.printCosts(text="Initial state of Costs:")  
         
     
     @property
@@ -124,7 +143,8 @@ class ModelGeo(InputData, tf.keras.Model):
     @property
     def mapped_Socioeconomic_data(self):
         # the Socioeconomic data per Community
-        return self(self.InputData.Socioeconomic_population)/self.mapped_Population
+        #return self(self.InputData.Socioeconomic_population)/self.mapped_Population
+        return self(self.Socioeconomic_data) / self.numBuurtenInCommunities
     
     @property
     def population_Map(self):
@@ -136,11 +156,32 @@ class ModelGeo(InputData, tf.keras.Model):
         # the Map (as Communities.N x InputData.N Tensor) filled with ones to map the neighbourhoods
         return self.Map(tf.ones(self.InputData.N))
     
+    @property
+    def mean_distances(self):
+        return tf.reduce_mean( self.distances * self.neighbourhood_Map , axis=1)
+    
+    @property
+    def numBuurtenInCommunities(self):
+        '''
+        Counts the amount of buurten in each community
+
+        Returns
+        -------
+        int N array
+            The amount of buurten in each community.
+        '''
+        counts = tf.zeros((self.Communities.N,), dtype=tf.int32)
+        for i in range(self.Communities.N):
+            label_count = tf.reduce_sum(tf.cast(tf.equal(self.labels, i), tf.int32))
+            counts = tf.tensor_scatter_nd_add(counts, [[i]], [label_count])
+    
+        return counts.numpy()
+    
     @tf.function
     def applyMapCommunities(self):
         self.Communities.Population = self.mapped_Population
         self.Communities.Socioeconomic_data = self.mapped_Socioeconomic_data
-        ## TODO add extra code here for education etc.
+        self.Communities.Education = self.mapped_Education
         
         
         
@@ -201,8 +242,8 @@ class ModelGeo(InputData, tf.keras.Model):
 
         '''
         return tf.reduce_sum(self.Map(inputs), axis=1)
-            
     
+
     @tf.function
     def cost_fn(self):
         """
@@ -234,21 +275,23 @@ class ModelGeo(InputData, tf.keras.Model):
         Tensor: A TensorFlow tensor representing the sum of all partial costs.
         """        
         # Calculate variance of socioeconomic data mapped to population map
-        SES_variance = tf.math.reduce_variance( self(self.InputData.Socioeconomic_population) )
+        SES_variance = tf.math.reduce_variance( self.mapped_Socioeconomic_data )
     
+        '''
         # Regularization term for population limits
         cost_popBounds = tf.reduce_sum(tf.where(self.mapped_Population > self.OptimizationData.popBoundHigh,
                                               tf.abs(self.mapped_Population-self.OptimizationData.popBoundHigh), 0) +
                                      tf.where(self.mapped_Population < self.OptimizationData.popBoundLow, 
                                               tf.abs(self.mapped_Population-self.OptimizationData.popBoundLow), 0)) / self.tot_pop 
-    
+        '''
+        # Regularization term for population limits
+        cost_popBounds = tf.math.reduce_variance(self.mapped_Population)
+        
         # Add regularization term based on distances
         cost_distance = self.cost_distances()
         
         # Add varience in education mapped_Education_population
-        education_variance = tf.math.reduce_mean(
-            tf.math.reduce_variance( self.mapped_Education, axis=0 )
-            )
+        education_variance = tf.math.reduce_mean(tf.math.reduce_variance( self.mapped_Education, axis=0 ))
         
         # Input costs into the OptimizationData model and save them
         self.OptimizationData.saveCosts(SES_variance, cost_popBounds, cost_distance, education_variance)
@@ -292,6 +335,7 @@ class ModelGeo(InputData, tf.keras.Model):
         if self.GeometryNeighbours is not None: 
             self.GeometryNeighbours = self.InputData.find_polygon_neighbours()
             
+        t = time.time()
         for i in range(Nit):
             # iterate over the neighbourhoods 
             labelslist = list(range(self.InputData.N))
@@ -314,10 +358,17 @@ class ModelGeo(InputData, tf.keras.Model):
                         neighbour_cost = self.cost_fn()
                         
                         # if the new labeling breaks the communities in two, don't do this
-                        if not self.check_connected(label_old):
+                        if (label_old in tf.unique(self.labels)[0].numpy() and 
+                            not self.check_connected(label_old)):
+                            #if not self.check_connected(label_old):
                             self.labels[label].assign(label_old)
                             break
-                        
+                        '''
+                        # checks if a community is not deleted
+                        if len(tf.unique(self.labels)[0])!=self.Communities.N:
+                            self.labels[label].assign(label_old)
+                            break
+                        '''##TODO fix this
                         # choose to accept or reject
                         if neighbour_cost < label_cost:
                             label_cost = neighbour_cost
@@ -336,8 +387,10 @@ class ModelGeo(InputData, tf.keras.Model):
             self.OptimizationData.storeCosts()   
             if i % 10 == 0:
                 # Print current loss and individual cost components
+                print("Time passed = "+str(int((time.time()-t)//60))+"min "+str(round(time.time()-t)%60)+"sec")
                 print("Step: {}, Loss: {}".format(i, label_cost.numpy()))
                 self.OptimizationData.printCosts()
+                t = time.time()
                 
             temperature *= 0.99
         return self.labels
@@ -385,26 +438,22 @@ class ModelGeo(InputData, tf.keras.Model):
     
     
     @tf.function
-    def initialize_weights(self):
+    def initialize_norm(self):
         # Normalizes the weights such that relatively all costs start at 1. 
         # Then it multplies the normalized weights by the assigned weights
-        self.OptimizationData.weight_SESvariance = self.OptimizationData.weight_SESvariance / ( 
-            tf.math.reduce_variance( self(self.InputData.Socioeconomic_population) )
-            )
-        self.OptimizationData.weight_distance = self.OptimizationData.weight_distance / self.cost_distances()
-        self.OptimizationData.weight_education = self.OptimizationData.weight_education /  tf.math.reduce_mean(
-            tf.math.reduce_variance( self.mapped_Education, axis=0 )
-            )
-        
+        self.OptimizationData.norm_SESvariance = tf.math.reduce_variance( self.mapped_Socioeconomic_data ) 
+        self.OptimizationData.norm_distance = self.cost_distances()
+        self.OptimizationData.norm_education = tf.math.reduce_mean( tf.math.reduce_variance( self.mapped_Education, axis=0 ) )
+        self.OptimizationData.norm_popBounds = tf.math.reduce_variance(self.mapped_Population)
         # POP Bounds
+        '''
         cost_popBounds = tf.reduce_sum(tf.where(self.mapped_Population > self.OptimizationData.popBoundHigh,
                                  tf.abs(self.mapped_Population-self.OptimizationData.popBoundHigh), 0) +
                         tf.where(self.mapped_Population < self.OptimizationData.popBoundLow, 
                                  tf.abs(self.mapped_Population-self.OptimizationData.popBoundLow), 0)) / self.tot_pop
         if cost_popBounds!=0:
-            self.OptimizationData.weight_popBounds = self.OptimizationData.weight_popBounds / cost_popBounds
-        
-        
+            self.OptimizationData.norm_popBounds =  cost_popBounds
+        '''        
         
         
     @tf.function
@@ -425,8 +474,16 @@ class ModelGeo(InputData, tf.keras.Model):
         '''
         try: self.distances
         except: raise Exception("Distances have not been initialised yet!")
-        
-        return tf.reduce_sum(tf.reduce_mean( self.distances * self.neighbourhood_Map , axis=1))
+        return tf.reduce_sum(self.mean_distances)
+        '''
+        cost=0
+        for i in range(self.Communities.N):
+            label_i = tf.where(self.labels==i)
+            for j in label_i:
+                indices = tf.concat([j*tf.ones([label_i.shape[0],1], dtype=tf.int64), label_i], axis=-1)
+                cost += tf.reduce_sum(tf.gather(self.all_distances, indices))
+        return cost
+    '''
         
         
     @tf.function
@@ -459,12 +516,16 @@ class ModelGeo(InputData, tf.keras.Model):
         # Calculate the pairwise distances between all pairs of locations using the Euclidean distance formula
         self.distances = tf.sqrt(tf.reduce_sum(tf.square(InputLocations_repeated - CommunitiesLocations_repeated), axis=-1))
         self.max_distance = tf.reduce_max(self.distances)
+        
+        # now for all distances
+        InputLocations_repeated = tf.repeat(tf.expand_dims(self.InputData.Locations, axis=0), self.InputData.N, axis=0)
+        self.all_distances = tf.sqrt(tf.reduce_sum(tf.square(InputLocations_repeated - tf.transpose(InputLocations_repeated, perm=[1,0,2])), axis=-1))
         return self.distances
     
     
     def initialize_labels(self):
         '''
-        Initialised the labels via:
+        Initialised the labels via an algorithm that lets the communities spread out like a virus:
             1. The neighbourhoods closest to the community centers will be initialised
                 as those communities. The rest will be initiated with a New Label
             2. The model iterates over the communities and the adjecent neighbours of 
@@ -504,46 +565,134 @@ class ModelGeo(InputData, tf.keras.Model):
         for i in range(self.Communities.N):
             labels[index[i]]=i
             com_Neighbours.append(list(self.GeometryNeighbours[index[i]]))
-            com_SES.append(self.InputData.Socioeconomic_population[index[i]].numpy())
+            #com_SES.append(self.InputData.Socioeconomic_population[index[i]].numpy())
+            com_SES.append(self.Socioeconomic_data[index[i]].numpy())
             com_index.append([index[i].numpy()])        
                     
         # let the communities spread out to nearest neighbours
-        avg_SES = tf.reduce_mean(self.InputData.Socioeconomic_population)
+        #avg_SES = tf.reduce_mean(self.InputData.Socioeconomic_population)
+        avg_SES = tf.reduce_mean(self.Socioeconomic_data)
         iteration_stuck = 0
         none_indices_old = []
         while True:
             # iterate over the communities randomly and load their current values
             Coms = list(range(self.Communities.N))
             random.shuffle(Coms)
-            for i in Coms:
-                index_current = com_index[i]
-                
+            for i in Coms:             
                 # calculate the SES values of of adding the neighbourhoods to the list 
-                SES_current = tf.reduce_sum(tf.gather(self.InputData.Socioeconomic_population, index_current))
-                SES_neighbour = tf.gather(self.InputData.Socioeconomic_population, com_Neighbours[i])
+                SES_current = tf.reduce_sum(tf.gather(self.Socioeconomic_data, com_index[i]))
+                SES_neighbour = tf.gather(self.Socioeconomic_data, com_Neighbours[i])
                 SES_option=(np.abs((SES_current + SES_neighbour - avg_SES).numpy()))
                     
                 # choose the best SES value
+                index_decision=None
                 for j in range(len(SES_option)): 
-                    index_decision = com_Neighbours[i][np.argsort(SES_option)[j]]
-                    if labels[index_decision] is None: # Neighbourhood should not be part of community already
+                    option = com_Neighbours[i][np.argsort(SES_option)[j]]
+                    if labels[option] is None: # Neighbourhood should not be part of community already
+                        index_decision=option
                         break
                     
+                # if no index has been found, move on
+                if index_decision is None: continue 
                 if index_decision in com_index: raise Exception("The index_decision is already part of the community!")
                 
                 # in case all neighbours are already taken add the newly decided values to the community
                 if labels[index_decision] is None: 
                     labels[index_decision] = i
                     com_Neighbours[i] += list(self.GeometryNeighbours[index_decision])
-                    com_SES[i] +=  tf.gather(self.InputData.Socioeconomic_population, index_decision).numpy()
+                    com_SES[i] +=  tf.gather(self.Socioeconomic_data, index_decision).numpy()
                     com_index[i].append(index_decision)
                     
                 # delete neighbours that are within the community
                 for nghb_i in range(len(com_Neighbours[i])-1, -1, -1):
                     if com_Neighbours[i][nghb_i] in com_index:
                         com_Neighbours[i].pop(nghb_i)
-                    #if com_Neighbours[i].count(com_Neighbours[i][nghb_i])>1:
-                    #    com_Neighbours[i].pop(nghb_i)
+                            
+            count = 0
+            for label in labels:
+                if label is None:
+                    count+=1
+            if count == 0: break
+        
+            # see if the model has gotten stuck
+            none_indices_new = [i for i, label in enumerate(labels) if label is None]
+            if none_indices_new == none_indices_old:
+                iteration_stuck+=1
+                if iteration_stuck==50: # after 50 iterations  of nothing happening, force exit
+                    print("PROGRAM GOT STUCK: FORCE EXIT!") 
+                    print("During initialization of labels, "+str(len(none_indices_new))+" labels where not initialized.")
+                    print("They will now be initialized according to their nearest neighbours label.")
+                    time.sleep(3)
+                    for index in none_indices_new: # copy the label from its neighbour
+                        for index_nghb in com_Neighbours[i]:
+                            if labels[index_nghb] is not None:    
+                                labels[index]=labels[index_nghb]
+                    break
+            else: 
+                iteration_stuck=0
+            none_indices_old = none_indices_new
+        
+        self.labels = tf.Variable(labels)   
+        self.applyMapCommunities()         
+        return self.labels
+    
+    
+    def initialize_labels_random(self):
+        '''
+        Initialise  the labels via a random algorithm
+
+        Raises
+        ------
+        Exception
+            If the distances have not been initialised.
+
+        '''
+        try: self.distances
+        except: raise Exception("Distances should be initialized before running this function!")
+        
+        labels = [None for _ in range(self.InputData.N)]
+        self.GeometryNeighbours = self.InputData.find_polygon_neighbours()
+        
+        # create the basis of the communities. The initial neighbours from which the communities spread out
+        index = tf.argmin(self.distances, axis=1)
+        com_Neighbours=[]       # the neighbours of the communities in the current state
+        com_index=[]            # the indices of neighbourhoods in the current communities
+        for i in range(self.Communities.N):
+            labels[index[i]]=i
+            com_Neighbours.append(list(self.GeometryNeighbours[index[i]]))
+            com_index.append([index[i].numpy()])        
+                    
+        # let the communities spread out to nearest neighbours
+        iteration_stuck = 0
+        none_indices_old = []
+        while True:
+            # iterate over the communities randomly and load their current values
+            Coms = list(range(self.Communities.N))
+            random.shuffle(Coms)
+            for i in Coms:                
+                # choose a random index
+                index_decision=None
+                current_com_ngbhrs = com_Neighbours[i]
+                random.shuffle(current_com_ngbhrs)
+                for option in current_com_ngbhrs: 
+                    if labels[option] is None: # take the first random index that is not taken yet
+                        index_decision=option
+                        break
+                    
+                # if no index has been found, move on
+                if index_decision is None: continue 
+                if index_decision in com_index: raise Exception("The index_decision is already part of the community!")
+                
+                # in case all neighbours are already taken add the newly decided values to the community
+                if labels[index_decision] is None: 
+                    labels[index_decision] = i
+                    com_Neighbours[i] += list(self.GeometryNeighbours[index_decision])
+                    com_index[i].append(index_decision)
+                    
+                # delete neighbours that are within the community
+                for nghb_i in range(len(com_Neighbours[i])-1, -1, -1):
+                    if com_Neighbours[i][nghb_i] in com_index:
+                        com_Neighbours[i].pop(nghb_i)
                         
                             
             count = 0
@@ -575,7 +724,32 @@ class ModelGeo(InputData, tf.keras.Model):
         return self.labels
     
     
-    def plot_communities(self,cdict, extent=None, print_labels=False, title='Communities After Optimization'):
+    def plot_communities(self,cdict=None, extent=None, print_labels=False, title='Communities After Optimization'):
+        def create_color_dict(N):
+            """
+            Creates a dictionary of colors with RGB values that are evenly spaced.
+            
+            Parameters:
+            - N (int): The number of colors to generate.
+            
+            Returns:
+            - colors_dict (dict): A dictionary of colors with keys ranging from 0 to N-1 and values in the format
+                                  recognized by matplotlib.pyplot.
+            """
+            cmap = plt.cm.get_cmap('gist_rainbow', N)  # Get a colormap with N colors
+            
+            colors_dict = {}
+            for i in range(N):
+                rgb = cmap(i)[:3]  # Extract the RGB values from the colormap
+                color = np.array(rgb) * 255  # Convert the RGB values from [0, 1] to [0, 255]
+                colors_dict[i] = '#{:02x}{:02x}{:02x}'.format(*color.astype(int))  # Convert the RGB values to hex format
+            
+            return colors_dict
+        
+        if cdict is None:
+            cdict = create_color_dict(self.Communities.N)
+        
+        
         # Reload colors
         colour = []
         for label in self.labels.numpy():
@@ -583,22 +757,22 @@ class ModelGeo(InputData, tf.keras.Model):
             
         if extent is None:
             geominx = min(self.InputData.GeometryGrid[0].exterior.xy[0])
-            geominy = max(self.InputData.GeometryGrid[0].exterior.xy[0])
-            geomaxx = min(self.InputData.GeometryGrid[0].exterior.xy[1])
+            geomaxx = max(self.InputData.GeometryGrid[0].exterior.xy[0])
+            geominy = min(self.InputData.GeometryGrid[0].exterior.xy[1])
             geomaxy = max(self.InputData.GeometryGrid[0].exterior.xy[1])
             for polygon in self.InputData.GeometryGrid:
                 geominx = min( [min(polygon.exterior.xy[0]), geominx] )
-                geominy = max( [max(polygon.exterior.xy[0]), geominy] )
-                geomaxx = min( [min(polygon.exterior.xy[1]), geomaxx] )
+                geomaxx = max( [max(polygon.exterior.xy[0]), geomaxx] )
+                geominy = min( [min(polygon.exterior.xy[1]), geominy] )
                 geomaxy = max( [max(polygon.exterior.xy[1]), geomaxy] )
-            extent = [geominx-200, geominy-200, geomaxx+200, geomaxy+200]
-    
+            extent = [geominx-200, geomaxx+200, geominy-200, geomaxy+200]
+                        
         # Create plot
-        fig, ax = plt.subplots()   
+        fig, ax = plt.subplots(figsize=(5, 4))   
         for i, polygon in enumerate(self.InputData.GeometryGrid):
             patch = PolygonPatch(np.array(polygon.exterior.xy).T, facecolor=colour[i], alpha=0.5)
             ax.add_patch(patch)
-    
+                
         if print_labels:
             colors = [cdict[i] for i in range(self.Communities.N)]
             x, y = np.meshgrid(extent[1]*12/16, np.linspace(extent[2]+(extent[3]-extent[2])*2/4,
@@ -609,6 +783,8 @@ class ModelGeo(InputData, tf.keras.Model):
     
         ax.set_xlim(extent[0],extent[1])
         ax.set_ylim(extent[2],extent[3])
+        ax.set_xticks([])
+        ax.set_yticks([])
         ax.set_title(title)
         return fig, ax
     
@@ -620,4 +796,12 @@ class ModelGeo(InputData, tf.keras.Model):
           "\n\nThe Population Map is:\n",tf.round( self.population_Map.numpy()),
           "\n\nSocioeconomic_data:\n", tf.expand_dims(self.mapped_Socioeconomic_data, axis=1).numpy(),
           "\n\nPopulation Size:\n", tf.round( tf.expand_dims(self.mapped_Population, axis=1) ).numpy()
-          ,"\n\n")
+          #,"\n\n",
+          #"The Variances are:\n",
+          #"Population: "+tf.math.reduce_variance(self.mapped_Population),
+          #"\n Socioeconomic_data: "+tf.math.reduce_variance(self.mapped_Socioeconomic_data),
+          #"\nEducation Levels: "+tf.math.reduce_variance( self.mapped_Education, axis=0 ),
+          #"\n\nThe mean distance equals: "+self.mean_distances          
+          )
+        
+        

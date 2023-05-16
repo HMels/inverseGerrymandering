@@ -1,7 +1,12 @@
-# inverseGerrymandering
+# Summary of the Paper: 
+In this paper we worked on using an Inverse Gerrymandering Optimisation Algorithm, which focused on drawing Geographical Borders through cities to define Communities that are more equal and diverse. The goal is to redefine how we look at cities to connect people of different social standings and backgrounds in order to create a more resilient communities. The algorithm uses so-called buurten (which often contains part of a handful of streets) in Amsterdam, The Netherlands as building blocks of communities. It first initialises certain buurten as the center of communities to be with a K-Means clustering algorithm, to make sure the communities are located sparsely over the whole area. Then it lets them spread out iteratively like a virus by using the best socio-economic score as a metric of optimisation. Lastly, it refines these communities via Potts model, by focusing on the variances in population-sizes, socio-economic value, and distribution of education levels between communities. We have shown that our method is well capable to create new communities with better average social scores, as named before.
+
+For more technical information, please read the paper as has been added to the github.
+
+# modules
 This program is dependent on the next modules:
 - python==3.9
-- tensorflow== 2.11.0
+- tensorflow==2.11.0
 - numpy==1.21.5
 - geopy==2.3.0
 - geopandas==0.12.2
@@ -24,6 +29,25 @@ https://www.atlasleefomgeving.nl/kaarten
 	- Files to run:
 		- load_inputData: To load the input data and save it via Pickle
 		- mainGeo: To run the model
+
+
+## Result Comparison Standard Deviation ($\sigma$) Different Parameters between Communities
+
+This table presents the standard deviation per parameter for different versions of labeling of buurten (neighborhoods). It compares various community definitions: Wijken (current neighborhoods), Random Communities, Initial Communities, and Refined Communities.
+
+| $\sigma_{\text{parameter}}$ | Wijken | Random Communities | Initial Communities | Refined Communities |
+| --------------------------- | ------ | ------------------ | ------------------- | ------------------ |
+| Socio-economic Score        | 0.259  | 0.148              | 0.136               | 0.131              |
+| Population Size             | ---    | 11,680             | 11,348              | 5,489              |
+| (Lower) Education           | 8.358  | 6.050              | 5.974               | 5.179              |
+| (Middle) Education          | 6.789  | 4.866              | 4.994               | 4.615              |
+| (Higher) Education          | 13.356 | 10.787             | 10.840              | 9.640              |
+
+- **Wijken**: Current neighborhoods, provided for reference. Smaller than the communities intended to be created.
+- **Random Communities**: Communities created by letting them spread out without preference.
+- **Initial Communities**: Communities initially defined based on the Socio-economic score.
+- **Refined Communities**: Communities refined iteratively based on variances in all parameters.
+
 
 
 # MODEL ARCHITECTURE:
@@ -82,39 +106,15 @@ https://www.atlasleefomgeving.nl/kaarten
 		- Costs are saved.
 	- The new model is visualised in different plots as described below.
 	
+	
+![Algorithm Process on World Map](/Figures_Paper/step_2.png)
+**Figure 3:** Showing how the algorithm works on the world map. Except for the geographical shapes of the borders, we must assume that this map has no similarities to the real world. In **A**, we initialize 6 communities located sparsely over the map using K-means clustering. Each community is assigned its own color, all other areas are not initialized as part of a community just yet. We then calculate how the socio-economic scores of each neighbor would change the community in **B**. The neighbor that optimally averages out the socio-economic score of that community is then chosen in **C**, after which we again calculate the socio-economic scores of all the neighbors. This process is repeated, such that the communities will spread out in an organic way, till each area is assigned a community as in **D**. Communities are not allowed to steal areas from each other. This state is the first estimate of our model. Next, we will try to refine the communities via the Potts model. In **E**, communities are allowed to steal each other's territories if this improves the total cost score, which in this case focuses not only on the socio-economic value but also the education levels, population sizes of the communities, and the distances between areas within the same community. One hard limit is that communities are not allowed to steal territories from each other if that means another community will be split in two. This process is repeated for a predetermined amount of iterations, after which we hopefully end up with **F**, the optimal communities according to the cost function.
 
+# Results 
 
-# Current state of the model:
+![Results](/Figures_Paper/results_main.png)
+**Figure 1:** After initializing communities in Amsterdam via our method, we arrive at **A**, the initialized communities based on socio-economic data. After running the refinement algorithm (with a temperature of 0.05), we arrive at **B**. The progression of the costs over 100 iterations can be seen in **C**. In **D**, we see a bar plot of the education levels of the neighborhoods, in the initial communities, and after refinement. The same has been done for the population sizes in **E** and the socio-economic value in **F**.
 
-Update List: 
-	1. I have run the model for temperature 0.05 for 100 iterations, figures are below.
-	2. I have added more data such that the whole of Amsterdam is now being optimized
-	3. The model is now able to play war games. Blobs are not allowed to be cut in two.
+![Comparison with Random Communities](/Figures_Paper/comparison_random.png)
+**Figure 2:** In **A**, 50 communities (of which 3 are shown) are created by letting them spread out randomly. We can compare the results from our method with these randomly generated communities by averaging out their results. In **B**, we compare the distribution per education level for both the average randomly generated neighborhoods. The same has been done for the population sizes in **C** and the socio-economic value in **D**.
 
-I have coded in such a way that it now creates a starting point which has blobs that define the communities. It starts by merely focussing on the socioeconomic value. In the top right we see the size of the point for how big it's population is and the number behind it is the SES value of the community:
-
-![01_CommunitiesBeforeRefinement](/Output/01_CommunitiesBeforeRefinement.png "Communities Before Refinement")
-
-I also then created the refinement process that works like a territorial war game, which is able to take in a cost optimization function (so unlike the previous one, it factors in multiple costs): 
-
-![03_CostOtimizationPlot](/Output/03_CostOtimizationPlot.png "Costs During Refinement")
-
-I used reguralization to improve the population size, such that it is more equally spread than the starting case, the SES value, and the average distance between all buurten in a community to make sure they are defined more closer together:
-
-![04_SESbarplot](/Output/04_SESbarplot.png "Socio-Economic barplot")
-
-And the optimization of the educational levels:
-
-![04_Educationbarplot](/Output/04_Educationbarplot.png "Education barplot")
-
-And the eventual population sizes:
-
-![04_Populationbarplot](/Output/04_Populationbarplot.png "Population barplot")
-
-Important to note is that i added a function that does not allow communities to be cut in two. Making sure that all blobs are connected: 
-
-![02_CommunitiesAfterRefinement](/Output/02_CommunitiesAfterRefinement.png "Communities After Refinement")
-
-I think it is really nice to see that now it forms multiple blobs that are continuous and have a pretty good economic score overall. I will now work on adding one more factor, like age, maybe test out on some other datasets, and then also start on writing a paper to explain all this.
-
-Some other folders, ending with temp0x, have been added to se the effect of changing the temperature during simulation to 0.x.

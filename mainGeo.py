@@ -6,8 +6,8 @@ Created on Wed Mar  8 19:41:17 2023
 """
 import pickle
 import numpy as np
-import tensorflow as tf
 import matplotlib.pyplot as plt
+import tensorflow as tf
 
 from modelGeo import ModelGeo
 
@@ -40,38 +40,36 @@ with open("inputData.pickle", "rb") as f:
 
 
 #%% Define model
-# trying to get 10000 households per community
-N_communities = 10#int(np.sum(inputData.Population)/10000) # 20 # Number of communities
-N_iterations = 100 # Number of iterations for training
+N_communities= 10 # inputData.wijk_centers.shape[0] #
+N_iterations=100
 
-# Define optimization algorithm and learning rate
-optimizer = tf.keras.optimizers.Adamax(learning_rate=.05)
-model = ModelGeo(inputData, N_communities, N_iterations, optimizer)
-'''
-# Adagrad doesn't converge below half of the SES value
-# Nadam works but has shocky convergence
-# Adam results in a very uniform map
-# Adamax works well ->  lr=1 fails. 
-#                       lr=.1 might be too uniform
-#                       lr=.01 might be better but handling of weights and reg should be better
-
-#TODO discuss the figures I get. Compare with how good the reguralisation works and use different regs
-'''
+model = ModelGeo(inputData, N_communities=N_communities)
 
 
-#%% plot initial state
+#%% initialise the labels via the algorithm described in the paper
+model.initialize_labels()
+    
+# plot the initial state
+cdict = create_color_dict(N_communities)
+fig01, ax01 = model.plot_communities(cdict, title='Communities Before Refinement')
+
+
+#%% define the optimalisation / refinement process
+model.initialise_optimisation(weights=[8,35,30,35], LN=[1,2,2,3], N_iterations=N_iterations,
+                              population_bounds=[0.9, 1.1])
+
+
+# save initial states
 Population_initial = model.mapped_Population.numpy()
 SES_initial = model.mapped_Socioeconomic_data.numpy()
 Education_initial = model.mapped_Education.numpy()
+Distances_initial = model.mean_distances.numpy()
 
 print("INITIAL VALUES: ")
 model.print_summary()
-
-cdict = create_color_dict(N_communities)
-fig01, ax01 = model.plot_communities(cdict, title='Communities Before Refinement')
     
 
-#%% Train the model for Niterations iterations
+#%% Refine the model for Niterations iterations
 print("OPTIMISING...")
 model.refine(N_iterations, temperature=.05)
 model.applyMapCommunities()
@@ -92,7 +90,7 @@ normalization=3.5
 
 
 #%% plot the SES value
-fig2, ax2 = plt.subplots()
+fig2, ax2 = plt.subplots(figsize=(7.5, 4))
 num_bins = int(model.InputData.Socioeconomic_data.shape[0]/normalization)
 SES_append = np.append(model.InputData.Socioeconomic_data, model.Communities.Socioeconomic_data)
 bin_edges = np.linspace(np.min(SES_append), np.max(SES_append), num_bins+1)
@@ -114,14 +112,14 @@ ax2.get_yaxis().set_visible(False)
 
 # setting labels
 ax2.legend(loc='upper right')
-ax2.set_xlabel('SES')
+ax2.set_xlabel('Average socio-economic score')
 ax2.get_yaxis().set_visible(False)
 ax2.set_title('Distribution of the economic data by population')
 plt.show()
 
 
 #%% histogram of the education
-fig3, ax3 = plt.subplots(1, 3, figsize=(12, 4))
+fig3, ax3 = plt.subplots(1, 3, figsize=(15, 4))
 num_bins = int(model.InputData.Education.shape[0]/normalization)
 edu_append = np.append(model.InputData.Education, model.mapped_Education, axis=0)
 bin_edges1 = np.linspace(np.min(edu_append[:,0]), np.max(edu_append[:,0]), num_bins+1)
@@ -155,7 +153,7 @@ fig3.suptitle('Distribution of Educational Levels by Population')
 
 
 #%% plot the Populations
-fig4, ax4 = plt.subplots()
+fig4, ax4 = plt.subplots(figsize=(7.5, 4))
 num_bins = int(model.InputData.Population.shape[0]/normalization)
 Pop_appended = np.append(model.InputData.Population, model.mapped_Population)
 bin_edges = np.linspace(np.min(Pop_appended), np.max(Pop_appended), num_bins+1)
@@ -182,8 +180,27 @@ ax4.set_ylabel('Frequency')
 ax4.set_title('Distribution of population sizes')
 
 
-#%% save all plots
+
+#%% save all plots and variables
 if True:
+    ax01.set_title('')
+    ax02.set_title('')
+    ax1.set_title('')
+    ax2.set_title('')
+    fig3.suptitle('')
+    ax4.set_title('')
+    try: ax4.get_legend().remove()
+    except: pass
+    try: ax3[2].get_legend().remove()
+    except: pass
+    
+    fig01.tight_layout()
+    fig02.tight_layout()
+    fig1.tight_layout()
+    fig2.tight_layout()
+    fig3.tight_layout()
+    fig4.tight_layout()
+    
     fig01.savefig(fname="Output/01_CommunitiesBeforeRefinement")
     fig02.savefig(fname="Output/02_CommunitiesAfterRefinement")
     fig1.savefig(fname="Output/03_CostOtimizationPlot")
@@ -191,3 +208,34 @@ if True:
     fig2.savefig(fname="Output/04_SESbarplot")
     fig3.savefig(fname="Output/04_Educationbarplot")
     fig4.savefig(fname="Output/04_Populationbarplot")
+    
+
+if True:
+    # initial
+    np.savez('SavedParameters/Population_initial.npz', my_array=Population_initial)
+    np.savez('SavedParameters/SES_initial.npz', my_array=SES_initial)
+    np.savez('SavedParameters/Education_initial.npz', my_array=Education_initial)
+    np.savez('SavedParameters/Distances_initial.npz', my_array=Distances_initial)
+    
+    # eventual
+    np.savez('SavedParameters/Population.npz', my_array=model.mapped_Population.numpy())
+    np.savez('SavedParameters/SES.npz', my_array=model.Communities.Socioeconomic_data.numpy())
+    np.savez('SavedParameters/Education.npz', my_array=model.mapped_Education.numpy())
+    np.savez('SavedParameters/Distances.npz', my_array=model.mean_distances.numpy())
+
+
+#%% output variance
+print("Variance: ",
+      "\nSocioeconomic Score:",
+      #"\n neighbourhoods:",np.var(model.InputData.Socioeconomic_data.numpy()),
+      "\n initial Communities:",np.var(SES_initial),
+      "\n refined Communities:",np.var(model.Communities.Socioeconomic_data.numpy()),
+      "\nEducation:",
+      #"\n neighbourhoods:",np.var(model.InputData.Education.numpy(), axis=0),
+      "\n initial Communities:",np.var(Education_initial, axis=0),
+      "\n refined Communities:",np.var(model.mapped_Education.numpy(), axis=0),
+      "\nPopulation:",
+      #"\n neighbourhoods:",np.var(model.InputData.Population.numpy(), axis=0),
+      "\n initial Communities:",np.var(Population_initial, axis=0),
+      "\n refined Communities:",np.var(model.mapped_Population.numpy(), axis=0)     
+      )

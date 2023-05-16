@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt
 
 
 class OptimizationData:
-    def __init__(self, weights=[10,1,1,1], N_iterations=100, LN=[1,1,1,1], optimizer=tf.keras.optimizers.Adamax(learning_rate=.1)):
+    def __init__(self, weights=[10,1,1,1], N_iterations=100, LN=[1,1,1,1]):
         '''
         Initializes an instance of the OptimizationData class.
 
@@ -32,9 +32,7 @@ class OptimizationData:
             The number of iterations to perform in the optimization process. The default is 100.
         LN : list of int, optional
             The regularization N powers. The default is [1,2,1,1].
-        optimizer : TensorFlow optimizer, optional
-            The TensorFlow optimizer to use in the optimization process. The default is tf.keras.optimizers.Adamax(learning_rate=.1).
-
+            
         Attributes
         ----------
         N_iterations : int
@@ -62,13 +60,19 @@ class OptimizationData:
         self.costs = np.zeros((N_iterations, len(weights)+1)) # Define variables to store costs during training
         self.i_iteration = 0  # current interation
         
+        # weights 
         self.weight_SESvariance = weights[0]
         self.weight_popBounds = weights[1]
         self.weight_distance = weights[2]
         self.weight_education = weights[3]
         
+        # normalisation factors
+        self.norm_SESvariance = 1
+        self.norm_popBounds = 1
+        self.norm_distance = 1
+        self.norm_education = 1
+        
         self.LN = LN # the reguralization N powers
-        self.optimizer = optimizer
         
         
     @tf.function
@@ -84,10 +88,10 @@ class OptimizationData:
             cost_education (TensorFlow tensor):
                 The cost due to the education differences between each community.
         '''
-        self.Cost_SES_variance = abs( SES_variance * self.weight_SESvariance ) **self.LN[0]
-        self.Cost_popBounds = abs( cost_popBounds * self.weight_popBounds ) **self.LN[1]
-        self.Cost_distance = abs( cost_distance * self.weight_distance )**self.LN[2]
-        self.cost_education = abs( cost_education * self.weight_education )**self.LN[3]
+        self.Cost_SES_variance = self.weight_SESvariance * abs( SES_variance / self.norm_SESvariance ) **self.LN[0]
+        self.Cost_popBounds = self.weight_popBounds * abs( cost_popBounds / self.norm_popBounds ) **self.LN[1]
+        self.Cost_distance = self.weight_distance * abs( cost_distance / self.norm_distance )**self.LN[2]
+        self.cost_education = self.weight_education  * abs( cost_education / self.norm_education )**self.LN[3]
         
         
     @property
@@ -137,7 +141,7 @@ class OptimizationData:
         
     def plotCosts(self):
         # Plot cost values over time
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(figsize=(5, 4))
         ax.plot(self.costs[:, 0], label="Total costs", ls="-")
         ax.plot(self.costs[:, 1], label="L"+str(self.LN[0])+" SES variance", ls="--")
         ax.plot(self.costs[:, 2], label="L"+str(self.LN[1])+" population bounds", ls="--")
@@ -146,8 +150,8 @@ class OptimizationData:
         ax.set_xlim(0, self.i_iteration-1)
         ax.set_ylim(0, np.max(self.costs[:, 0])*1.2)
         ax.set_title("Costs during Refinement")
-        ax.set_xlabel("Iterations")
-        ax.set_ylabel("Costs")
+        #ax.set_xlabel("Iterations")
+        #ax.set_ylabel("Costs")
         plt.legend()
         return fig, ax
     
