@@ -1,7 +1,7 @@
 # inverseGerrymandering
 This program is dependent on the next modules:
 - python==3.9
-- tensorflow== 2.11.0
+- tensorflow==2.11.0
 - numpy==1.21.5
 - geopy==2.3.0
 - geopandas==0.12.2
@@ -118,3 +118,22 @@ Important to note is that i added a function that does not allow communities to 
 I think it is really nice to see that now it forms multiple blobs that are continuous and have a pretty good economic score overall. I will now work on adding one more factor, like age, maybe test out on some other datasets, and then also start on writing a paper to explain all this.
 
 Some other folders, ending with temp0x, have been added to se the effect of changing the temperature during simulation to 0.x.
+
+
+## Standard Deviation ($\sigma$) Different Parameters between Communities
+
+This table presents the standard deviation per parameter for different versions of labeling of buurten (neighborhoods). It compares various community definitions: Wijken (current neighborhoods), Random Communities, Initial Communities, and Refined Communities.
+
+| $\sigma_{\text{parameter}}$ | Wijken | Random Communities | Initial Communities | Refined Communities |
+| --------------------------- | ------ | ------------------ | ------------------- | ------------------ |
+| Socio-economic Score        | 0.259  | 0.148              | 0.136               | 0.131              |
+| Population Size             | ---    | 11,680             | 11,348              | 5,489              |
+| (Lower) Education           | 8.358  | 6.050              | 5.974               | 5.179              |
+| (Middle) Education          | 6.789  | 4.866              | 4.994               | 4.615              |
+| (Higher) Education          | 13.356 | 10.787             | 10.840              | 9.640              |
+
+- **Wijken**: Current neighborhoods, provided for reference. Smaller than the communities intended to be created.
+- **Random Communities**: Communities created by letting them spread out without preference.
+- **Initial Communities**: Communities initially defined based on the Socio-economic score.
+- **Refined Communities**: Communities refined iteratively based on variances in all parameters.
+

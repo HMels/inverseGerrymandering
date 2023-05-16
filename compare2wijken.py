@@ -11,8 +11,11 @@ from geopy.geocoders import Nominatim
 from inputData import InputData
 import matplotlib.pyplot as plt
 
+from modelGeo import ModelGeo
+
+
 #%% load wijken instead of buurten
-#inputData = InputData("Data/SES_WOA_scores_per_wijk_en_buurt_25042023_160857.csv", False)
+inputData_wijken = InputData("Data/SES_WOA_scores_per_wijk_en_buurt_25042023_160857.csv", False)
 
 #%% load model outputs
 # initial
@@ -33,8 +36,6 @@ normalization=5
 
 
 #%% calculate random average buurten
-from modelGeo import ModelGeo
-
 with open("inputData.pickle", "rb") as f:
     inputData = pickle.load(f)
     
@@ -194,3 +195,25 @@ if True:
     fig2.savefig(fname="SavedParameters/04_SESbarplot")
     fig3.savefig(fname="SavedParameters/04_Educationbarplot")
     fig4.savefig(fname="SavedParameters/04_Populationbarplot")
+    
+
+#%%
+print("Variance: ",
+      "\nSocioeconomic Score:",
+      "\n Wijken:",np.var(inputData_wijken.Socioeconomic_data.numpy()),
+      "\n Random Communities:",np.var(SES),
+      "\n Initial Communities:",np.var(SES_initial),
+      "\n Refined Communities:",np.var(mapped_SES),
+      "\nEducation:",
+      "\n Wijken:",np.var(inputData_wijken.Education.numpy(), axis=0),
+      "\n Random Communities0:",np.var(Education0, axis=0),
+      "\n Random Communities1:",np.var(Education1, axis=0),
+      "\n Random Communities2:",np.var(Education2, axis=0),
+      "\n Initial Communities:",np.var(Education_initial, axis=0),
+      "\n Refined Communities:",np.var(mapped_Education, axis=0),
+      "\nPopulation:",
+      "\n Wijken:",np.var(inputData_wijken.Population.numpy(), axis=0),
+      "\n Random Communities:",np.var(Population, axis=0)   ,
+      "\n Initial Communities:",np.var(Population_initial),
+      "\n Refined Communities:",np.var(mapped_Population) 
+      )

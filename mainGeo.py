@@ -181,8 +181,6 @@ ax4.set_title('Distribution of population sizes')
 
 
 
-
-
 #%% save all plots and variables
 if True:
     ax01.set_title('')
@@ -224,3 +222,20 @@ if True:
     np.savez('SavedParameters/SES.npz', my_array=model.Communities.Socioeconomic_data.numpy())
     np.savez('SavedParameters/Education.npz', my_array=model.mapped_Education.numpy())
     np.savez('SavedParameters/Distances.npz', my_array=model.mean_distances.numpy())
+
+
+#%% output variance
+print("Variance: ",
+      "\nSocioeconomic Score:",
+      #"\n neighbourhoods:",np.var(model.InputData.Socioeconomic_data.numpy()),
+      "\n initial Communities:",np.var(SES_initial),
+      "\n refined Communities:",np.var(model.Communities.Socioeconomic_data.numpy()),
+      "\nEducation:",
+      #"\n neighbourhoods:",np.var(model.InputData.Education.numpy(), axis=0),
+      "\n initial Communities:",np.var(Education_initial, axis=0),
+      "\n refined Communities:",np.var(model.mapped_Education.numpy(), axis=0),
+      "\nPopulation:",
+      #"\n neighbourhoods:",np.var(model.InputData.Population.numpy(), axis=0),
+      "\n initial Communities:",np.var(Population_initial, axis=0),
+      "\n refined Communities:",np.var(model.mapped_Population.numpy(), axis=0)     
+      )

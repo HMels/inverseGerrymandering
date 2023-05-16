@@ -79,8 +79,10 @@ class ModelGeo(InputData, tf.keras.Model):
         
         # Initialize communities
         self.Communities = Communities(N_communities)
-        #self.Communities.initialize_community_Locations(self.Communities.N, self.InputData.Locations)
-        self.Communities.initialize_community_Locations(self.Communities.N, self.InputData.wijk_centers)
+        try:
+            self.Communities.initialize_community_Locations(self.Communities.N, self.InputData.wijk_centers)
+        except:
+            self.Communities.initialize_community_Locations(self.Communities.N, self.InputData.Locations)
         
         # Initialize the distance matrix and the economic values
         self.initialize_distances()
@@ -794,4 +796,12 @@ class ModelGeo(InputData, tf.keras.Model):
           "\n\nThe Population Map is:\n",tf.round( self.population_Map.numpy()),
           "\n\nSocioeconomic_data:\n", tf.expand_dims(self.mapped_Socioeconomic_data, axis=1).numpy(),
           "\n\nPopulation Size:\n", tf.round( tf.expand_dims(self.mapped_Population, axis=1) ).numpy()
-          ,"\n\n")
+          #,"\n\n",
+          #"The Variances are:\n",
+          #"Population: "+tf.math.reduce_variance(self.mapped_Population),
+          #"\n Socioeconomic_data: "+tf.math.reduce_variance(self.mapped_Socioeconomic_data),
+          #"\nEducation Levels: "+tf.math.reduce_variance( self.mapped_Education, axis=0 ),
+          #"\n\nThe mean distance equals: "+self.mean_distances          
+          )
+        
+        
