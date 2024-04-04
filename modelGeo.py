@@ -20,45 +20,45 @@ from communities import Communities
 from optimizationData import OptimizationData
 
 class ModelGeo(InputData, tf.keras.Model):
-    def __init__(self, InputData, N_communities):
+    def __init__(self, InputData, N_communities: int):
         """
         Initializes the Dataset object with given socioeconomic data, population size, number of communities, and neighbourhood locations.
     
         Args:
-            InputData (InputData Class): 
+            InputData : InputData Class
                 (InputData.N x N_features) array containing the socioeconomic data of the initial neighbourhoods.
-            N_communities (int): 
-                The number of communities to end up with.
-        
+            N_communities : The number of communities to end up with.
+    
         Raises:
             Exception: If the number of new communities is greater than the number of neighbourhoods.
-        
+    
         Attributes:
-            InputData.Socioeconomic_data (TensorFlow):
+            InputData.Socioeconomic_data : TensorFlow
                 (InputData.N x 1 x 1) TensorFlow variable containing the socioeconomic data of the initial neighbourhoods.
-            InputData.Population (TensorFlow):
+            InputData.Population : TensorFlow
                 (InputData.N x 1 x 1) TensorFlow variable containing the population sizes of the initial neighbourhoods.
-            InputData.Locations (TensorFlow):
+            InputData.Locations : TensorFlow
                 (InputData.N x 2) TensorFlow variable containing the grid locations of the initial neighbourhoods.
-            Communities.N (int):
+            Communities.N : int
                 The number of communities to end up with.
-            InputData.N (int):
+            InputData.N : int
                 The number of initial neighbourhoods.
-            Map (Tensor):
+            Map : Tensor
                 (Communities.N x InputData.N) TensorFlow variable representing the community map.
-            Communities.Locations (Variable):
+            Communities.Locations : Variable
                 (Communities.N x 2) TensorFlow variable representing the center points of the new communities.
-            population_bounds (Variable):
+            population_bounds : Variable
                 (2,) TensorFlow variable representing the upper and lower boundaries by which the population can grow or shrink of their original size.
-            tot_pop (Tensor):
+            tot_pop : Tensor
                TensorFlow tensor representing the total population size of all initial neighbourhoods.
-            avg_pop (Tensor):
+            avg_pop : Tensor
                 TensorFlow tensor representing the average population size of the initial neighbourhoods.
-            popBoundHigh (Tensor):
+            popBoundHigh : Tensor
                 TensorFlow tensor representing the upper population boundary for the new communities.
-            popBoundLow (Tensor):
+            popBoundLow : Tensor
                 TensorFlow tensor representing the lower population boundary for the new communities
         """
+
         #super(Dataset, self).__init__()
         tf.keras.Model.__init__(self)
         
@@ -88,26 +88,19 @@ class ModelGeo(InputData, tf.keras.Model):
         self.initialize_distances()
 
 
-    def initialise_optimisation(self, weights=[8,35,30,35],  LN=[1,2,2,3], N_iterations=50, population_bounds=[0.9, 1.1]):  
+    def initialise_optimisation(self, weights: list = [8,35,30,35], LN: list = [1,2,2,3], N_iterations: int = 50, 
+                            population_bounds: list = [0.9, 1.1]):  
         '''
-        Initialises the optimisation algoriths.
-
+        Initialises the optimisation algorithm.
+    
         Parameters
         ----------
-        weights : list of int, optional
-            A list of the weights. Respectively, SESvariance, PopBounds, distance.. The default is [8,35,30,35].
-        LN : list of int, optional
-            The regularization N powers. Respectively, SESvariance, PopBounds, distance. The default is [1,2,2,3].
-        N_iterations : int, optional
-            The number of iterations to run the optimizer. The default is 50.
-        population_bounds : int list, optional
-            The cost due to the number of individuals in each community. The default is [0.9, 1.1].
-
-        Returns
-        -------
-        None.
-
+        weights : A list of the weights. Respectively, SESvariance, PopBounds, distance. Default is [8,35,30,35].
+        LN : The regularization N powers. Respectively, SESvariance, PopBounds, distance. Default is [1,2,2,3].
+        N_iterations : Number of iterations to run the optimizer. Default is 50.
+        population_bounds : The upper and lower population bounds for each community. Default is [0.9, 1.1].
         '''
+
         # initialise weights
         # ORDER OF WEIGHTS: SES variance, Pop bounds, Distance, Education
         self.OptimizationData = OptimizationData(weights=weights, N_iterations=N_iterations, LN=LN)
@@ -161,15 +154,16 @@ class ModelGeo(InputData, tf.keras.Model):
         return tf.reduce_mean( self.distances * self.neighbourhood_Map , axis=1)
     
     @property
-    def numBuurtenInCommunities(self):
+    def numBuurtenInCommunities(self) -> np.ndarray:
         '''
-        Counts the amount of buurten in each community
-
+        Counts the number of neighborhoods in each community.
+    
         Returns
         -------
-        int N array
-            The amount of buurten in each community.
+        np.ndarray
+            An array containing the number of neighborhoods in each community.
         '''
+
         counts = tf.zeros((self.Communities.N,), dtype=tf.int32)
         for i in range(self.Communities.N):
             label_count = tf.reduce_sum(tf.cast(tf.equal(self.labels, i), tf.int32))
@@ -226,26 +220,23 @@ class ModelGeo(InputData, tf.keras.Model):
         
     
     @tf.function
-    def call(self, inputs):
+    def call(self, inputs: tf.Tensor) -> tf.Tensor:
         '''
-        Transforms the inputs according to the label
-
+        Transforms the inputs according to the label.
+    
         Parameters
         ----------
-        inputs : (InputData.N) or (InputData.N x 2) Tensor
-            The inputs that we want to be transformed.
-
+        inputs : The inputs to be transformed. It can be of shape (InputData.N) or (InputData.N x 2).
+    
         Returns
         -------
-        (Communities.N) or (Communities.N x 2) Tensor
-            The transformed values of the Tensor.
-
+        The transformed values of the tensor. It can be of shape (Communities.N) or (Communities.N x 2).
         '''
         return tf.reduce_sum(self.Map(inputs), axis=1)
     
 
     @tf.function
-    def cost_fn(self):
+    def cost_fn(self) -> tf.Tensor:
         """
         Calculates the cost function that needs to be minimized during the optimization process. The cost function consists of several
         regularization terms that encourage the population map to have certain properties, such as positive values and limits on population
@@ -277,13 +268,6 @@ class ModelGeo(InputData, tf.keras.Model):
         # Calculate variance of socioeconomic data mapped to population map
         SES_variance = tf.math.reduce_variance( self.mapped_Socioeconomic_data )
     
-        '''
-        # Regularization term for population limits
-        cost_popBounds = tf.reduce_sum(tf.where(self.mapped_Population > self.OptimizationData.popBoundHigh,
-                                              tf.abs(self.mapped_Population-self.OptimizationData.popBoundHigh), 0) +
-                                     tf.where(self.mapped_Population < self.OptimizationData.popBoundLow, 
-                                              tf.abs(self.mapped_Population-self.OptimizationData.popBoundLow), 0)) / self.tot_pop 
-        '''
         # Regularization term for population limits
         cost_popBounds = tf.math.reduce_variance(self.mapped_Population)
         
@@ -299,22 +283,19 @@ class ModelGeo(InputData, tf.keras.Model):
     
     
     @tf.function
-    def refine(self, Nit, temperature=0):
+    def refine(self, Nit: int, temperature: float=0) -> tf.Tensor:
         """
         Refines a labeling of a set of points using the Potts model, minimizing a cost function.
     
         Parameters
         ----------
-        Nit : int
-            The number of iterations to run the refinement algorithm.
-        temperature : float, optional
-            The temperature parameter of the Potts model, controlling the degree of smoothing.
+        Nit : The number of iterations to run the refinement algorithm.
+        temperature : The temperature parameter of the Potts model, controlling the degree of smoothing.
             The default value is 1.2.
     
         Returns
         -------
-        tf.Tensor
-            A tensor of shape (N,), where N is the number of points in the set. The tensor
+        A tensor of shape (N,), where N is the number of points in the set. The tensor
             contains the updated labels for each point, after the refinement algorithm.
     
         Description
@@ -396,7 +377,7 @@ class ModelGeo(InputData, tf.keras.Model):
         return self.labels
     
     
-    def check_connected(self, label):
+    def check_connected(self, label: int) -> bool:
         """
         Check if all objects with the same label are connected via Depth First Search (DFS).
         
@@ -407,13 +388,11 @@ class ModelGeo(InputData, tf.keras.Model):
     
         Parameters
         ----------
-        label : int
-            The label to check for connectivity.
+        label : The label to check for connectivity.
     
         Returns
         -------
-        bool
-            True if all objects with the same label are connected, False otherwise.
+        True if all objects with the same label are connected, False otherwise.
         """
         # Get indices of objects with given label
         indices = tf.where(tf.equal(self.labels, label))
@@ -445,15 +424,6 @@ class ModelGeo(InputData, tf.keras.Model):
         self.OptimizationData.norm_distance = self.cost_distances()
         self.OptimizationData.norm_education = tf.math.reduce_mean( tf.math.reduce_variance( self.mapped_Education, axis=0 ) )
         self.OptimizationData.norm_popBounds = tf.math.reduce_variance(self.mapped_Population)
-        # POP Bounds
-        '''
-        cost_popBounds = tf.reduce_sum(tf.where(self.mapped_Population > self.OptimizationData.popBoundHigh,
-                                 tf.abs(self.mapped_Population-self.OptimizationData.popBoundHigh), 0) +
-                        tf.where(self.mapped_Population < self.OptimizationData.popBoundLow, 
-                                 tf.abs(self.mapped_Population-self.OptimizationData.popBoundLow), 0)) / self.tot_pop
-        if cost_popBounds!=0:
-            self.OptimizationData.norm_popBounds =  cost_popBounds
-        '''        
         
         
     @tf.function
@@ -475,19 +445,10 @@ class ModelGeo(InputData, tf.keras.Model):
         try: self.distances
         except: raise Exception("Distances have not been initialised yet!")
         return tf.reduce_sum(self.mean_distances)
-        '''
-        cost=0
-        for i in range(self.Communities.N):
-            label_i = tf.where(self.labels==i)
-            for j in label_i:
-                indices = tf.concat([j*tf.ones([label_i.shape[0],1], dtype=tf.int64), label_i], axis=-1)
-                cost += tf.reduce_sum(tf.gather(self.all_distances, indices))
-        return cost
-    '''
         
         
     @tf.function
-    def initialize_distances(self):
+    def initialize_distances(self) -> tf.float32:
         """
         Initializes the pairwise distances between the newly created communities and the initial neighbourhoods.
 
@@ -523,7 +484,7 @@ class ModelGeo(InputData, tf.keras.Model):
         return self.distances
     
     
-    def initialize_labels(self):
+    def initialize_labels(self) -> tf.Variable:
         '''
         Initialised the labels via an algorithm that lets the communities spread out like a virus:
             1. The neighbourhoods closest to the community centers will be initialised
@@ -725,7 +686,7 @@ class ModelGeo(InputData, tf.keras.Model):
     
     
     def plot_communities(self,cdict=None, extent=None, print_labels=False, title='Communities After Optimization'):
-        def create_color_dict(N):
+        def create_color_dict(N: int) -> dict:
             """
             Creates a dictionary of colors with RGB values that are evenly spaced.
             
