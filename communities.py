@@ -19,54 +19,47 @@ from scipy.spatial.distance import cdist
 
 
 class Communities:
-    def __init__(self, N_communities, Population=None, Socioeconomic_data=None):
+    def __init__(self, N_communities: int, Population: np.ndarray = None, Socioeconomic_data: np.ndarray = None):
         """
         Initialize the communities object.
     
         Parameters
         ----------
-        N_communities : int
-            The number of communities to be created.
-        Population : numpy.ndarray, optional
-            An array containing population data for each community. The default is None.
-        Socioeconomic_data : numpy.ndarray, optional
-            An array containing socioeconomic data for each community. The default is None.
+        N_communities : The number of communities to be created.
+        Population : An array containing population data for each community. Default is None.
+        Socioeconomic_data: An array containing socioeconomic data for each community. Default is None.
         """
+
         self.N = N_communities
         self.Population = Population if Population is not None else None
         self.Socioeconomic_data = Socioeconomic_data if Socioeconomic_data is not None else None
         
         
     @property
-    def Socioeconomic_population(self):
+    def Socioeconomic_population(self) -> tf.float32:
         '''
         Returns
         -------
-        tf.float32
-            The socioeconomic data multiplied by the population to get the actual socioeconomic value.
+        The socioeconomic data multiplied by the population to get the actual socioeconomic value.
         '''
         return self.Socioeconomic_data * self.Population
         
     
     @tf.function
-    def initialize_community_Locations(self, N_communities, InputData_Locations):
+    def initialize_community_Locations(self, N_communities: int, InputData_Locations: np.ndarray) -> np.ndarray:
         """
         Initialize the locations of communities by sparsifying the input locations using KNN.
     
         Parameters
         ----------
-        N_communities : int
-            The number of communities we want to end up with.
-        N_inputData : int
-            The number of input data points.
-        InputData_Locations : numpy.ndarray
-            An array containing the location data for the input data points.
+        N_communities : The number of communities we want to end up with.
+        InputData_Locations : An array containing the location data for the input data points.
     
         Returns
         -------
-        Locations : numpy.ndarray
-            Array containing the grid locations of the newly created communities.
+        Locations : Array containing the grid locations of the newly created communities.
         """
+
         N_inputData = InputData_Locations.shape[0]
         # Create the center points for the new communities
         if N_communities == N_inputData:
@@ -81,23 +74,21 @@ class Communities:
             
             
     
-    def KMeansClustering(self, N_communities, InputData_Locations):
+    def KMeansClustering(self, N_communities: int, InputData_Locations: np.ndarray) -> np.ndarray:
         """
         Finds N_communities central points that are distributed over the data in such a way that all InputData_Locations 
         have a point that is close to them, while these points should not be too close to each other.
-
+    
         Parameters
         ----------
-        N_communities : int
-            The number of communities we want to end up with.
-        InputData_Locations : numpy.ndarray
-            An (N_inputData x 2) array containing the location data for the input data points.
-
+        N_communities : The number of communities we want to end up with.
+        InputData_Locations : An (N_inputData x 2) array containing the location data for the input data points.
+    
         Returns
         -------
-        numpy.ndarray
-            An (N_communities x 2) array containing the locations of the central points.
-        """    
+        An (N_communities x 2) array containing the locations of the central points.
+        """
+ 
         # Step 1: Initialize the KMeans object and fit the data to it
         kmeans = KMeans(n_clusters=N_communities)
         kmeans.fit(InputData_Locations)
@@ -127,17 +118,14 @@ class Communities:
         return kmeans.cluster_centers_
     
     
-    def FindSparseLocations(N_communities, InputData_Locations):
+    def FindSparseLocations(N_communities: int, InputData_Locations: tf.Tensor) -> tf.Tensor:
         """
         This function uses a sparse sampling approach to find a set of N_communities central points that are well distributed across the InputData_Locations while satisfying a nearest neighbor condition based on the number of nearest neighbors k.
-        Function Not in use Right Now
-        
+        Function not in use right now.
+    
         Parameters
         ----------
-        N_communities : int
-            The number of communities we want to end up with.
-        N_inputData : int
-            The number of input data points.
+        N_communities : The number of communities we want to end up with.
         InputData_Locations : tensorflow.Tensor of shape (N_inputData, 2)
             A tensor containing the location data for the input data points.
     
@@ -146,6 +134,7 @@ class Communities:
         sparse_Locations : tensorflow.Tensor of shape (N_communities, 2)
             A tensor containing the locations of the N_communities central points that are well distributed across the InputData_Locations.
         """
+
         # Define the number of nearest neighbors to consider
         k = tf.cast(tf.math.ceil(InputData_Locations.shape[0] / N_communities), tf.int32)
 

@@ -19,42 +19,38 @@ import matplotlib.pyplot as plt
 
 
 class OptimizationData:
-    def __init__(self, weights=[10,1,1,1], N_iterations=100, LN=[1,1,1,1]):
+    def __init__(self, weights: list = [10,1,1,1], N_iterations: int = 100, LN: list[int] = [1,1,1,1]):
         '''
         Initializes an instance of the OptimizationData class.
 
         Parameters
         ----------
-        weights : list of int, optional
-            A list of the weights. Respectively, SESvariance, PopBounds, distance.
-            The default is [10,1,1,1].
-        N_iterations : int, optional
-            The number of iterations to perform in the optimization process. The default is 100.
-        LN : list of int, optional
-            The regularization N powers. The default is [1,2,1,1].
+        weights : A list of the weights. Respectively, SESvariance, PopBounds, distance. Default is [10,1,1,1].
+        N_iterations : Number of iterations to perform in the optimization process. Default is 100.
+        LN : Regularization N powers. Default is [1,2,1,1].
             
         Attributes
         ----------
         N_iterations : int
-            The number of iterations to perform in the optimization process.
+            Number of iterations to perform in the optimization process.
         costs : ndarray of shape (N_iterations, 5)
-            An array to store costs during training.
+            Array to store costs during training.
         i_iteration : int
-            The current iteration.
+            Current iteration.
         weight_SESvariance : int
-            The weight for SES variance.
+            Weight for SES variance.
         weight_popBounds : int
-            The weight for population boundaries.
+            Weight for population boundaries.
         weight_distance : int
-            The weight for distance.
+            Weight for distance.
         weight_education : int
-            The weight for the education
+            Weight for education.
         LN : list of int
-            The regularization N powers.
+            Regularization N powers.
         optimizer : TensorFlow optimizer
-            The TensorFlow optimizer to use in the optimization process.
-        
+            TensorFlow optimizer to use in the optimization process.
         '''
+        
         if len(LN)!=len(weights): raise ValueError("Input LN and weights should be equal in size")
         self.N_iterations = N_iterations
         self.costs = np.zeros((N_iterations, len(weights)+1)) # Define variables to store costs during training
@@ -76,18 +72,19 @@ class OptimizationData:
         
         
     @tf.function
-    def saveCosts(self, SES_variance, cost_popBounds, cost_distance, cost_education):
+    def saveCosts(self, SES_variance: tf.Tensor, cost_popBounds: tf.Tensor, cost_distance: tf.Tensor, cost_education: tf.Tensor):
         '''
         Parameters:
-            SES_variance (TensorFlow tensor):
-                The variance of the Socioeconomic Status of the communities.
-            cost_popBounds (TensorFlow tensor):
-                The cost due to the number of individuals in each community.
-            cost_distance (TensorFlow tensor):
-                The cost due to the distance between each community.
-            cost_education (TensorFlow tensor):
-                The cost due to the education differences between each community.
+            SES_variance : TensorFlow tensor
+                Variance of the Socioeconomic Status of the communities.
+            cost_popBounds : TensorFlow tensor
+                Cost due to the number of individuals in each community.
+            cost_distance : TensorFlow tensor
+                Cost due to the distance between each community.
+            cost_education : TensorFlow tensor
+                Cost due to the education differences between each community.
         '''
+
         self.Cost_SES_variance = self.weight_SESvariance * abs( SES_variance / self.norm_SESvariance ) **self.LN[0]
         self.Cost_popBounds = self.weight_popBounds * abs( cost_popBounds / self.norm_popBounds ) **self.LN[1]
         self.Cost_distance = self.weight_distance * abs( cost_distance / self.norm_distance )**self.LN[2]
@@ -133,7 +130,7 @@ class OptimizationData:
         
     
     @tf.function
-    def initialize_popBoundaries(self, avg_pop, population_bounds=[0.8, 1.2]):
+    def initialize_popBoundaries(self, avg_pop, population_bounds: list=[0.8, 1.2]):
         self.population_bounds = tf.Variable(population_bounds, trainable=False, dtype=tf.float32) # Boundaries by which the population can grow or shrink of their original size
         self.popBoundHigh = self.population_bounds[1] * avg_pop # Upper population boundary
         self.popBoundLow = self.population_bounds[0] * avg_pop # Lower population boundary)

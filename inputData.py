@@ -20,30 +20,29 @@ from shapely.geometry import Polygon, MultiLineString, MultiPoint
 
 
 class InputData:
-    def __init__(self, path, buurtenOnOff=True):
+    def __init__(self, path: str, buurtenOnOff: bool = True):
         """
         Initializes an instance of the class and loads socio-economic data from a CSV file.
     
         Args:
-            path (str): The path to the CSV file containing the socio-economic data.
-            buurtenOnOff (bool): True if you only need to load the buurten, False if you need wijken
-        
+            path : The path to the CSV file containing the socio-economic data.
+            buurtenOnOff : True if you only need to load the buurten, False if you need wijken. Default is True.
+    
         Raises:
             FileNotFoundError: If the specified file path does not exist.
     
         Notes:
             The CSV file must have columns separated by semicolons and enclosed in quotes.
             Rows with missing or invalid data are removed from the loaded data.
-        
+    
         Attributes:
-            neighbourhoods (array):
+            neighbourhoods : array
                 1D array of strings containing the names of the neighbourhoods.
-            Population (Tensor):
+            Population : Tensor
                 1D TensorFlow Tensor of floats containing the number of private Population in each neighbourhood.
-            Socioeconomic_data (Tensor):
+            Socioeconomic_data : Tensor
                 1D TensorFlow Tensor of floats containing the socio-economic value of each neighbourhood.
         """
-        
         # Load data from CSV file using pandas
         data = pd.read_csv(path, delimiter=';', quotechar='"', na_values='       .')
         
@@ -91,58 +90,8 @@ class InputData:
                     self.buurten_in_wijken.append(buurten_in_wijken)
                 
         self.gather(indices)
+     
         
-    '''    
-    def add_path(self, path):
-        # Load data from CSV file using pandas
-        data = pd.read_csv(path, delimiter=';', quotechar='"', na_values='       .')
-        
-        # Replace '       .' with NaN in columns 3 and 4 and delete these rows as they don't have data data
-        data = data.replace('       .', float('nan'))
-        data.dropna(inplace=True)
-        data = data.values
-        
-        # Extract relevant variables and store as class variables
-        self.neighbourhoods = np.concatenate([
-            self.neighbourhoods, data[:,1] ]) # neighbourhood names
-        self.neighbourhood_codes = np.concatenate([
-            self.neighbourhood_codes, data[:,2] ]) # neighbourhood codes
-        Population = np.array(data[:,3].tolist()).astype(np.float32)[:]        
-        self.Population = tf.Variable(
-            np.concatenate([self.Population.numpy(), Population], axis=0)
-            , trainable=False, dtype=tf.float32) # Number of households per neighbourhood
-        Education = tf.transpose(tf.Variable([data[:,4], data[:,5], data[:,6]], trainable=False, dtype=tf.float32))
-        self.Education = tf.Variable(
-            np.concatenate([self.Education, Education])
-            , trainable=False, dtype=tf.float32)# education levels Low, Medium, High
-        Socioeconomic_data = np.array(data[:,7].tolist()).astype(np.float32)[:]
-        self.Socioeconomic_data = tf.Variable(
-            np.concatenate([self.Socioeconomic_data, Socioeconomic_data])
-            , trainable=False, dtype=tf.float32) # Socio-economic value of the region
-                
-        # filter buurtcodes that don't start with BU
-        indices = []
-        codes_added = [] # a list of codes that are already there, to prevent doubles
-        for i, codes in enumerate(self.neighbourhood_codes):
-            if codes[:2]=="BU":
-                if codes not in codes_added:
-                    indices.append(i)
-                    codes_added.append(codes)
-                else:
-                    print("Code "+codes+" was already in dataset and will be ignored.")
-                
-        self.gather(indices)
-        self.N = self.Socioeconomic_data.shape[0]
-    ''' 
-        
-    #@property
-    #def Socioeconomic_population(self):
-    # apparently this is not how SES values work 
-        # returns a tf.float32 
-        # The socioeconomic data multiplied by the population to get the actual socioeconomic value.
-    #    return self.Socioeconomic_data * self.Population
-    
-    
     @property
     def Education_population(self):
         # returns a tf.float32 
@@ -150,8 +99,7 @@ class InputData:
         return tf.multiply(self.Education/100, tf.expand_dims(self.Population, axis=1))
         
     
-    
-    def gather(self, indices):
+    def gather(self, indices: list):
         '''
         Gathers the indices inputted for all properties 
         '''
@@ -178,15 +126,10 @@ class InputData:
         ##TODO add neighbours here if initiated
         
         
-    def load_miscData(self, path):
+    def load_miscData(self, path: str):
         """
         Loads the miscalenous data from the file that can be downloaded from  
         https://www.cbs.nl/nl-nl/maatwerk/2011/48/kerncijfers-wijken-en-buurten-2011
-
-        Parameters
-        ----------
-        path : str
-            The path from which to load the file.
 
         """
         # read in the file using pandas
@@ -248,7 +191,7 @@ class InputData:
         Loads geospatial data from a specified file in geopackage format and stores it in the class variables. 
     
         Args:
-            filename (str): The path to the geopackage file containing the geospatial data.
+            filename: The path to the geopackage file containing the geospatial data.
     
         Returns:
             None
@@ -276,23 +219,6 @@ class InputData:
         gdf = gpd.read_file(filename)
         gdf = gdf.to_crs('3857') # Convert to latlong
         gdf = gdf.explode(index_parts=True)  # Convert multipolygon to polygon
-        '''
-        coords_list = [list(x.exterior.coords) for x in gdf.geometry] # Make a list out of it
-
-        # Convert polygons to center coordinates and store as class variable
-        center_coordinates = []
-        for coords in coords_list:
-            center_coordinates.append(np.average(coords, axis=0))
-        '''
-        #center_coordinates = []
-        #geometry_gdf = self.gdf.geometry.tolist()
-        #for geom in geometry_gdf:
-            
-        
-        #center_coordinates = np.array(center_coordinates)
-        #center_coordinates[:, [0, 1]] = center_coordinates[:, [1, 0]] # not needed as 3857 fixes everything
-        
-        #self.center_coordinates = tf.Variable(center_coordinates, trainable=False, dtype=tf.float32)
         self.gdf = gdf
         
 
@@ -311,15 +237,16 @@ class InputData:
             mirroredPolygons.append(MappedPolygon)
         self.Geometry = mirroredPolygons
 
-    def map2grid(self, latlon0):
+
+    def map2grid(self, latlon0: tuple) ->tf.Tensor:
         """
         Maps the coordinates in `Coordinates` to a grid that follows the reference coordinate `latlon0`.
         
         Args:
-            latlon0 (tuple): A tuple containing the reference coordinate in the form (latitude, longitude).
+            latlon0: A tuple containing the reference coordinate in the form (latitude, longitude).
         
         Returns:
-            Locations (Tensor): TensorFlow Tensor of shape (n,2) containing the mapped coordinates.
+            Locations: TensorFlow Tensor of shape (n,2) containing the mapped coordinates.
         
         Notes:
             This function calculates the distance in meters of each coordinate in `Coordinates` to the reference
@@ -351,16 +278,16 @@ class InputData:
         self.wijk_centers = tf.Variable(wijk_centers, trainable=False, dtype=tf.float32)
         
         
-    def polygon2grid(self, latlon0):
+    def polygon2grid(self, latlon0: tuple) -> list:
         """
         Maps the coordinates in `Polygons` to a grid that follows the reference coordinate `latlon0`.
         
         Args:
-            latlon0 (tuple): A tuple containing the reference coordinate in the form (latitude, longitude).
-            Polygons (GeoSeries): A GeoSeries object containing Polygon objects to be mapped to a grid.
+            latlon0: A tuple containing the reference coordinate in the form (latitude, longitude).
+            #Polygons (GeoSeries): A GeoSeries object containing Polygon objects to be mapped to a grid.
         
         Returns:
-            MappedPolygons (list): A list of `Polygon` objects containing the mapped coordinates.
+            MappedPolygons: A list of `Polygon` objects containing the mapped coordinates.
         
         Notes:
             This function calculates the distance in meters of each coordinate in `Polygons` to the reference
@@ -387,18 +314,14 @@ class InputData:
 
 
 
-    def buurt_filter(self, devmode=False):
+    def buurt_filter(self, devmode: bool = False):
         """
         Filters the socio-economic data based on whether the neighbourhoods are present in the geopandas data and 
         stores the relevant data in class variables.
         
         Args:
-            devmode: bool
-                boolean that allows for error messages when loading buurten. Default is False.
-        
-        Returns:
-            None
-            
+            devmode: boolean that allows for error messages when loading buurten. Default is False.
+                    
         Notes:
             This function compares each neighbourhood in the socio-economic data to the `buurtnaam` column of the 
             geopandas dataframe stored in the `gdf` class variable. If a neighbourhood is present in the geopandas data,
